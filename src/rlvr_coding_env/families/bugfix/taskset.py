@@ -223,7 +223,7 @@ class BugfixTask(vf.Task[BugfixData]):
 class BugfixTasksetConfig(vf.TasksetConfig):
     num_tasks: int = Field(20, ge=1)
     seed_offset: int = 0
-    level: Literal[1, 2] = 1
+    level: int = Field(1, ge=1, le=2)
 
 
 class BugfixTaskset(vf.Taskset[BugfixTask, BugfixTasksetConfig]):
