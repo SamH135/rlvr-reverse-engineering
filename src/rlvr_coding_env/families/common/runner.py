@@ -1,4 +1,4 @@
-"""Trusted keygen grading entry point."""
+"""Trusted isolated function grading entry point."""
 
 from __future__ import annotations
 
@@ -12,14 +12,14 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path("/app/repo")
-MAX_KEYGEN_BYTES = 16 * 1024
+MAX_DELIVERABLE_BYTES = 16 * 1024
 MAX_RESULT_BYTES = 1_000_000
 
 
-def _clean_submission() -> bool:
+def _clean_submission(deliverable: str) -> bool:
     valid = True
     for path in REPO_ROOT.iterdir():
-        if path.name == "keygen.py":
+        if path.name == deliverable:
             continue
         try:
             if path.is_symlink() or path.is_file():
@@ -35,6 +35,7 @@ def _clean_submission() -> bool:
 
 def check_scope(protected_path: Path) -> dict[str, Any]:
     protected = json.loads(protected_path.read_text())
+    deliverable = protected["deliverable"]
     actual: dict[str, str] = {}
     symlink_found = False
     for current, directories, files in os.walk(REPO_ROOT, followlinks=False):
@@ -60,22 +61,24 @@ def check_scope(protected_path: Path) -> dict[str, Any]:
                 path.read_bytes()
             ).hexdigest()
 
-    expected = set(protected["expected_files"]) | {"keygen.py"}
+    expected = set(protected["expected_files"]) | {deliverable}
     hashes = protected["hashes"]
-    keygen_path = REPO_ROOT / "keygen.py"
+    deliverable_path = REPO_ROOT / deliverable
     try:
-        keygen_size_ok = (
-            keygen_path.is_file() and keygen_path.stat().st_size <= MAX_KEYGEN_BYTES
+        deliverable_size_ok = (
+            deliverable_path.is_file()
+            and deliverable_path.stat().st_size <= MAX_DELIVERABLE_BYTES
         )
     except OSError:
-        keygen_size_ok = False
+        deliverable_size_ok = False
     valid = (
         not symlink_found
         and set(actual) == expected
-        and keygen_size_ok
+        and deliverable_size_ok
         and all(actual.get(path) == digest for path, digest in hashes.items())
     )
-    return {"scope_ok": valid and _clean_submission()}
+    cleaned = _clean_submission(deliverable)
+    return {"scope_ok": valid and cleaned}
 
 
 def _write_result(result_path: Path, payload: dict[str, object]) -> None:
@@ -91,25 +94,32 @@ def _write_result(result_path: Path, payload: dict[str, object]) -> None:
 
 def run_hidden(cases_path: Path, result_path: Path) -> None:
     payload = json.loads(cases_path.read_text())
-    names = payload["names"]
+    cases = payload["cases"]
     outputs = []
     try:
         spec = importlib.util.spec_from_file_location(
-            "_keygen_submission", REPO_ROOT / "keygen.py"
+            f"_{Path(payload['deliverable']).stem}_submission",
+            REPO_ROOT / payload["deliverable"],
         )
         if spec is None or spec.loader is None:
-            raise ImportError("could not load keygen.py")
+            raise ImportError("could not load submission")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        function = module.keygen
     except BaseException as error:  # noqa: BLE001
-        outputs = [{"ok": False, "error": type(error).__name__} for _ in names]
+        outputs = [{"ok": False, "error": type(error).__name__} for _ in cases]
     else:
-        for name in names:
+        for arguments in cases:
             try:
-                value = function(name)
-                if not isinstance(value, str):
-                    raise TypeError("keygen must return str")
+                function = getattr(module, payload["function_name"])
+                value = function(*arguments)
+                if payload["return_type"] == "str":
+                    valid_value = isinstance(value, str)
+                elif payload["return_type"] == "uint32":
+                    valid_value = type(value) is int and 0 <= value < 2**32
+                else:
+                    raise ValueError("unknown return type")
+                if not valid_value:
+                    raise TypeError("submission returned an invalid value")
                 json.dumps(value, allow_nan=False)
                 outputs.append({"ok": True, "value": value})
             except BaseException as error:  # noqa: BLE001

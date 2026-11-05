@@ -8,3 +8,6 @@ Run validation or a rollout locally with Docker:
 
 Build the keygen checker image locally before validating that taskset:
 `docker build -f docker/keygen.Dockerfile -t rlvr-keygen:0.1 .`
+
+The decompile taskset reuses `rlvr-keygen:0.1`; validate it with
+`uv run vf-validate decompile --runtime.type docker`.

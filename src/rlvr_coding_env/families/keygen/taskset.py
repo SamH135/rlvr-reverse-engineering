@@ -12,12 +12,11 @@ import verifiers.v1 as vf
 from pydantic import Field
 from verifiers.v1.utils.artifacts import collect
 
+from rlvr_coding_env.families.common.grading import grade_function
 from rlvr_coding_env.families.keygen.generator import generate
 
 REPO_ROOT = "/app/repo"
 GRADER_ROOT = "/grader"
-RUNNER_TIMEOUT_SECONDS = 20
-MAX_RESULT_BYTES = 1_000_000
 
 
 class KeygenData(vf.TaskData):
@@ -79,14 +78,20 @@ class KeygenTask(vf.Task[KeygenData]):
 
     async def stage_verifier(self, trace: vf.Trace, runtime: vf.Runtime) -> None:
         runner = (
-            files("rlvr_coding_env.families.keygen").joinpath("runner.py").read_bytes()
+            files("rlvr_coding_env.families.common").joinpath("runner.py").read_bytes()
         )
         nonce = secrets.token_urlsafe(32)
         cases = {
             "nonce": nonce,
-            "names": [self.data.example_name, *self.data.hidden_names],
+            "deliverable": "keygen.py",
+            "function_name": "keygen",
+            "return_type": "str",
+            "cases": [
+                [name] for name in [self.data.example_name, *self.data.hidden_names]
+            ],
         }
         protected = {
+            "deliverable": "keygen.py",
             "expected_files": self.data.expected_files,
             "hashes": self.data.protected_hashes,
         }
@@ -121,95 +126,20 @@ class KeygenTask(vf.Task[KeygenData]):
             return result
 
     async def _compute_grading(self, runtime: vf.Runtime) -> dict[str, Any]:
-        scope_run = await runtime.run(
-            [
-                "python3",
-                f"{GRADER_ROOT}/runner.py",
-                "--scope",
-                f"{GRADER_ROOT}/protected.json",
-            ],
-            {},
+        namespace: dict[str, object] = {}
+        exec(  # noqa: S102
+            compile(
+                self.data.reference_source,
+                "<trusted-keygen-reference>",
+                "exec",
+            ),
+            namespace,
         )
-        if scope_run.exit_code:
-            raise RuntimeError("the trusted keygen scope checker failed to run")
-        try:
-            scope_ok = json.loads(scope_run.stdout).get("scope_ok") is True
-        except (json.JSONDecodeError, AttributeError):
-            raise RuntimeError(
-                "the keygen scope checker returned invalid output"
-            ) from None
-
-        result: dict[str, Any] = {
-            "scope_ok": scope_ok,
-            "hidden_pass_frac": 0.0,
-            "runner_timeout": False,
-            "runner_completed": False,
-            "example_ok": 0.0,
-        }
-        if scope_ok:
-            command = (
-                f"exec timeout --signal=KILL {RUNNER_TIMEOUT_SECONDS}s python3 "
-                f"{GRADER_ROOT}/runner.py --run {GRADER_ROOT}/cases.json "
-                f"{GRADER_ROOT}/result.json >/dev/null 2>&1"
-            )
-            hidden_run = await runtime.run(["sh", "-c", command], {})
-            result["runner_timeout"] = hidden_run.exit_code in (124, 137)
-            if not result["runner_timeout"]:
-                exists = await runtime.run(
-                    ["test", "-f", f"{GRADER_ROOT}/result.json"], {}
-                )
-                if exists.exit_code == 0:
-                    size = await runtime.run(
-                        ["sh", "-c", f"wc -c < {GRADER_ROOT}/result.json"], {}
-                    )
-                    try:
-                        result_size = int(size.stdout.strip())
-                    except ValueError:
-                        result_size = MAX_RESULT_BYTES + 1
-                    if size.exit_code == 0 and result_size <= MAX_RESULT_BYTES:
-                        raw_result = await runtime.read(
-                            f"{GRADER_ROOT}/result.json", max_bytes=MAX_RESULT_BYTES
-                        )
-                        try:
-                            payload = json.loads(raw_result)
-                        except (json.JSONDecodeError, UnicodeDecodeError):
-                            payload = None
-                        if (
-                            isinstance(payload, dict)
-                            and payload.get("nonce") == self._grading_nonce
-                            and isinstance(payload.get("outputs"), list)
-                            and len(payload["outputs"])
-                            == len(self.data.hidden_names) + 1
-                            and hidden_run.exit_code == 0
-                        ):
-                            result["runner_completed"] = True
-                            namespace: dict[str, object] = {}
-                            exec(  # noqa: S102
-                                compile(
-                                    self.data.reference_source,
-                                    "<trusted-keygen-reference>",
-                                    "exec",
-                                ),
-                                namespace,
-                            )
-                            reference = namespace["serial"]
-                            outputs = payload["outputs"]
-                            result["example_ok"] = float(
-                                outputs[0]
-                                == {"ok": True, "value": self.data.example_serial}
-                            )
-                            expected = [
-                                {"ok": True, "value": reference(name)}
-                                for name in self.data.hidden_names
-                            ]
-                            result["hidden_pass_frac"] = sum(
-                                json.dumps(actual, sort_keys=True)
-                                == json.dumps(truth, sort_keys=True)
-                                for actual, truth in zip(
-                                    outputs[1:], expected, strict=True
-                                )
-                            ) / len(expected)
-        return result
+        reference = namespace["serial"]
+        expected = [{"ok": True, "value": self.data.example_serial}] + [
+            {"ok": True, "value": reference(name)} for name in self.data.hidden_names
+        ]
+        return await grade_function(runtime, self._grading_nonce, expected)
 
     @vf.metric
     async def scope_ok(self, runtime: vf.Runtime, trace: vf.Trace) -> float:
