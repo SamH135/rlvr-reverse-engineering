@@ -12,8 +12,16 @@ RUNNER_TIMEOUT_SECONDS = 20
 MAX_RESULT_BYTES = 1_000_000
 
 
+def _canonical_json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
 async def grade_function(
-    runtime: vf.Runtime, nonce: str, expected_outputs: list[dict[str, Any]]
+    runtime: vf.Runtime,
+    nonce: str,
+    expected_outputs: list[dict[str, Any]],
+    *,
+    include_case_passes: bool = False,
 ) -> dict[str, Any]:
     scope_run = await runtime.run(
         [
@@ -38,6 +46,8 @@ async def grade_function(
         "runner_completed": False,
         "example_ok": 0.0,
     }
+    if include_case_passes:
+        result["case_passes"] = []
     if not scope_ok:
         return result
     command = (
@@ -76,13 +86,13 @@ async def grade_function(
         return result
     result["runner_completed"] = True
     actual_outputs = payload["outputs"]
-    result["example_ok"] = float(
-        json.dumps(actual_outputs[0], sort_keys=True)
-        == json.dumps(expected_outputs[0], sort_keys=True)
-    )
+    case_passes = [
+        _canonical_json(actual) == _canonical_json(expected)
+        for actual, expected in zip(actual_outputs, expected_outputs, strict=True)
+    ]
+    result["example_ok"] = float(case_passes[0])
     hidden_expected = expected_outputs[1:]
-    result["hidden_pass_frac"] = sum(
-        json.dumps(actual, sort_keys=True) == json.dumps(expected, sort_keys=True)
-        for actual, expected in zip(actual_outputs[1:], hidden_expected, strict=True)
-    ) / len(hidden_expected)
+    result["hidden_pass_frac"] = sum(case_passes[1:]) / len(hidden_expected)
+    if include_case_passes:
+        result["case_passes"] = case_passes
     return result

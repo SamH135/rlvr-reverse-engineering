@@ -1,0 +1,6 @@
+{
+  "name": "bool_values",
+  "operation": "bool_values",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

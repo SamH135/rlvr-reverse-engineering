@@ -1,0 +1,6 @@
+{
+  "name": "valid_only",
+  "operation": "valid_only",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

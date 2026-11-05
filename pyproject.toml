@@ -14,7 +14,13 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/rlvr_coding_env", "src/bugfix", "src/keygen", "src/decompile"]
+packages = [
+    "src/rlvr_coding_env",
+    "src/bugfix",
+    "src/keygen",
+    "src/decompile",
+    "src/formats",
+]
 
 [tool.uv.sources]
 verifiers = { git = "https://github.com/PrimeIntellect-ai/verifiers", rev = "308619da69c2e918c6b7c96e68f746485a913dba" }

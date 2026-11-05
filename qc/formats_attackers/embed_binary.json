@@ -1,0 +1,6 @@
+{
+  "name": "embed_binary",
+  "operation": "embed_binary",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

@@ -32,6 +32,98 @@ class DecompileInstance:
     raw_constants: list[int]
 
 
+def c_constant_expression(value: int, key: int | None = None) -> str:
+    if key is not None:
+        return f"(0x{value ^ key:08X}u ^ decode_key)"
+    return f"0x{value:08X}u"
+
+
+def _indent(lines: list[str], prefix: str) -> list[str]:
+    return [f"{prefix}{line}" if line else "" for line in lines]
+
+
+def emit_c_dispatcher(
+    seed: int,
+    blocks: list[list[str]],
+    final_block: list[str],
+    *,
+    opaque: bool = False,
+    opaque_expression: str = "0u",
+) -> list[str]:
+    states = random.Random(seed ^ 0x6A09E667).sample(
+        range(1000, 1_000_000), len(blocks) + 1
+    )
+    lines = [
+        f"    volatile uint32_t state = {states[0]}u;",
+        "    while (1) {",
+        "        switch (state) {",
+    ]
+    for index, block in enumerate(blocks):
+        lines.append(f"        case {states[index]}u: {{")
+        if opaque:
+            lines.extend(
+                [
+                    f"            uint32_t opaque_input = {opaque_expression};",
+                    "            if (opaque_true(opaque_input)) {",
+                ]
+            )
+            lines.extend(_indent(block, "                "))
+            lines.extend(
+                [
+                    "            } else {",
+                    "                return 1;",
+                    "            }",
+                    "            if (!opaque_true(opaque_input)) {",
+                    "                volatile uint32_t junk = opaque_input + 1u;",
+                    "                (void)junk;",
+                    "            }",
+                ]
+            )
+        else:
+            lines.extend(_indent(block, "            "))
+        lines.extend(
+            [
+                f"            state = {states[index + 1]}u;",
+                "            break;",
+                "        }",
+            ]
+        )
+    lines.append(f"        case {states[-1]}u: {{")
+    if opaque:
+        lines.extend(
+            [
+                f"            uint32_t opaque_input = {opaque_expression};",
+                "            if (opaque_true(opaque_input)) {",
+            ]
+        )
+        lines.extend(_indent(final_block, "                "))
+        lines.extend(
+            [
+                "            } else {",
+                "                return 1;",
+                "            }",
+                "            if (!opaque_true(opaque_input)) {",
+                "                volatile uint32_t junk = opaque_input + 1u;",
+                "                (void)junk;",
+                "            }",
+                "            break;",
+                "        }",
+            ]
+        )
+    else:
+        lines.extend(_indent(final_block, "            "))
+        lines.append("        }")
+    lines.extend(
+        [
+            "        default:",
+            "            return 1;",
+            "        }",
+            "    }",
+        ]
+    )
+    return lines
+
+
 def _word(rng: random.Random) -> int:
     return rng.getrandbits(32) | 0x10000
 
@@ -136,20 +228,20 @@ def _stage_c(stage: Stage, index: int, constant) -> list[str]:
     if stage.kind == "map":
         if stage.operation == "rotl":
             return [
-                f"        uint32_t {prefix}_rotate = {constant(stage.value)};",
-                "        for (size_t i = 0; i < n; i++) {",
+                f"uint32_t {prefix}_rotate = {constant(stage.value)};",
+                "for (size_t i = 0; i < n; i++) {",
                 (
-                    f"            xs[i] = (xs[i] << {prefix}_rotate) | "
+                    f"    xs[i] = (xs[i] << {prefix}_rotate) | "
                     f"(xs[i] >> (32u - {prefix}_rotate));"
                 ),
-                "        }",
+                "}",
             ]
         symbol = {"add": "+=", "xor": "^=", "mul": "*="}[stage.operation]
         return [
-            f"        uint32_t {prefix}_constant = {constant(stage.value)};",
-            "        for (size_t i = 0; i < n; i++) {",
-            f"            xs[i] {symbol} {prefix}_constant;",
-            "        }",
+            f"uint32_t {prefix}_constant = {constant(stage.value)};",
+            "for (size_t i = 0; i < n; i++) {",
+            f"    xs[i] {symbol} {prefix}_constant;",
+            "}",
         ]
     if stage.kind == "filter":
         if stage.operation == "index_mod":
@@ -159,35 +251,33 @@ def _stage_c(stage: Stage, index: int, constant) -> list[str]:
         else:
             condition = f"xs[i] < {prefix}_constant"
         return [
-            f"        uint32_t {prefix}_constant = {constant(stage.value)};",
-            "        size_t output = 0;",
-            "        for (size_t i = 0; i < n; i++) {",
-            f"            if (!({condition})) xs[output++] = xs[i];",
-            "        }",
-            "        n = output;",
+            f"uint32_t {prefix}_constant = {constant(stage.value)};",
+            "size_t output = 0;",
+            "for (size_t i = 0; i < n; i++) {",
+            f"    if (!({condition})) xs[output++] = xs[i];",
+            "}",
+            "n = output;",
         ]
     if stage.kind == "fold":
         lines = []
         if stage.operation == "mul_add":
-            lines.append(
-                f"        uint32_t {prefix}_constant = {constant(stage.value)};"
-            )
-        lines.append("        for (size_t i = 0; i < n; i++) {")
+            lines.append(f"uint32_t {prefix}_constant = {constant(stage.value)};")
+        lines.append("for (size_t i = 0; i < n; i++) {")
         if stage.operation == "add":
-            lines.append("            acc += xs[i];")
+            lines.append("    acc += xs[i];")
         elif stage.operation == "xor":
-            lines.append("            acc ^= xs[i];")
+            lines.append("    acc ^= xs[i];")
         else:
-            lines.append(f"            acc = acc * {prefix}_constant + xs[i];")
-        lines.append("        }")
+            lines.append(f"    acc = acc * {prefix}_constant + xs[i];")
+        lines.append("}")
         return lines
     return [
-        "        uint32_t previous = 0;",
-        "        for (size_t i = 0; i < n; i++) {",
-        "            uint32_t current = xs[i];",
-        "            xs[i] = current ^ previous;",
-        "            previous = current;",
-        "        }",
+        "uint32_t previous = 0;",
+        "for (size_t i = 0; i < n; i++) {",
+        "    uint32_t current = xs[i];",
+        "    xs[i] = current ^ previous;",
+        "    previous = current;",
+        "}",
     ]
 
 
@@ -223,9 +313,7 @@ def _c_source(
         )
 
     def constant(value: int) -> str:
-        if encoded:
-            return f"(0x{value ^ key:08X}u ^ decode_key)"
-        return f"0x{value:08X}u"
+        return c_constant_expression(value, key if encoded else None)
 
     lines.extend(
         [
@@ -245,116 +333,36 @@ def _c_source(
         ]
     )
 
-    def final_code(indent: str = "    ") -> list[str]:
+    def final_code() -> list[str]:
         return [
-            f"{indent}uint32_t final_a = {constant(final_a)};",
-            f"{indent}uint32_t final_b = {constant(final_b)};",
-            f"{indent}uint32_t final_multiplier = {constant(multiplier)};",
-            f"{indent}acc ^= acc >> final_a;",
-            f"{indent}acc *= final_multiplier;",
-            f"{indent}acc ^= acc >> final_b;",
-            f'{indent}printf("%" PRIu32 "\\n", acc);',
-            f"{indent}return 0;",
+            f"uint32_t final_a = {constant(final_a)};",
+            f"uint32_t final_b = {constant(final_b)};",
+            f"uint32_t final_multiplier = {constant(multiplier)};",
+            "acc ^= acc >> final_a;",
+            "acc *= final_multiplier;",
+            "acc ^= acc >> final_b;",
+            'printf("%" PRIu32 "\\n", acc);',
+            "return 0;",
         ]
 
     if level < 3:
         for index, stage in enumerate(stages):
             lines.append("    {")
-            lines.extend(_stage_c(stage, index, constant))
+            lines.extend(_indent(_stage_c(stage, index, constant), "        "))
             lines.append("    }")
-        lines.extend(final_code())
+        lines.extend(_indent(final_code(), "    "))
     else:
-        control_rng = random.Random(seed ^ 0x6A09E667)
-        states = control_rng.sample(range(1000, 1_000_000), len(stages) + 1)
         lines.extend(
-            [
-                f"    volatile uint32_t state = {states[0]}u;",
-                "    while (1) {",
-                "        switch (state) {",
-            ]
-        )
-        for index, stage in enumerate(stages):
-            lines.extend(
+            emit_c_dispatcher(
+                seed,
                 [
-                    f"        case {states[index]}u: {{",
-                ]
+                    _stage_c(stage, index, constant)
+                    for index, stage in enumerate(stages)
+                ],
+                final_code(),
+                opaque=encoded,
+                opaque_expression="acc ^ (n == 0 ? 0u : xs[0])",
             )
-            if encoded:
-                lines.extend(
-                    [
-                        (
-                            "            uint32_t opaque_input = acc ^ "
-                            "(n == 0 ? 0u : xs[0]);"
-                        ),
-                        "            if (opaque_true(opaque_input)) {",
-                    ]
-                )
-                lines.extend(
-                    line.replace("        ", "                ", 1)
-                    for line in _stage_c(stage, index, constant)
-                )
-                lines.extend(
-                    [
-                        "            } else {",
-                        "                return 1;",
-                        "            }",
-                        "            if (!opaque_true(opaque_input)) {",
-                        "                volatile uint32_t junk = opaque_input + 1u;",
-                        "                (void)junk;",
-                        "            }",
-                    ]
-                )
-            else:
-                lines.extend(_stage_c(stage, index, constant))
-            lines.extend(
-                [
-                    f"            state = {states[index + 1]}u;",
-                    "            break;",
-                    "        }",
-                ]
-            )
-        lines.extend(
-            [
-                f"        case {states[-1]}u: {{",
-            ]
-        )
-        if encoded:
-            lines.extend(
-                [
-                    (
-                        "            uint32_t opaque_input = acc ^ "
-                        "(n == 0 ? 0u : xs[0]);"
-                    ),
-                    "            if (opaque_true(opaque_input)) {",
-                ]
-            )
-            lines.extend(
-                line.replace("    ", "                ", 1)
-                for line in final_code(indent="    ")
-            )
-            lines.extend(
-                [
-                    "            } else {",
-                    "                return 1;",
-                    "            }",
-                    "            if (!opaque_true(opaque_input)) {",
-                    "                volatile uint32_t junk = opaque_input + 1u;",
-                    "                (void)junk;",
-                    "            }",
-                    "            break;",
-                    "        }",
-                ]
-            )
-        else:
-            lines.extend(final_code(indent="            "))
-            lines.append("        }")
-        lines.extend(
-            [
-                "        default:",
-                "            return 1;",
-                "        }",
-                "    }",
-            ]
         )
     lines.extend(["}", ""])
     return "\n".join(lines)

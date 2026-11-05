@@ -10,7 +10,15 @@ RUNNER = (
 )
 
 
-def _run_submission(tmp_path: Path, source: str) -> dict:
+def _run_submission(
+    tmp_path: Path,
+    source: str,
+    *,
+    case_arguments: list[list[object]] | None = None,
+    function_name: str = "f",
+    return_type: str = "uint32",
+    arg_decode: str | None = None,
+) -> dict:
     repo = tmp_path / "repo"
     grader = tmp_path / "grader"
     repo.mkdir(parents=True, exist_ok=True)
@@ -19,10 +27,12 @@ def _run_submission(tmp_path: Path, source: str) -> dict:
     cases = {
         "nonce": "test-nonce",
         "deliverable": "solution.py",
-        "function_name": "f",
-        "return_type": "uint32",
-        "cases": [[[1]], [[2]]],
+        "function_name": function_name,
+        "return_type": return_type,
+        "cases": case_arguments if case_arguments is not None else [[[1]], [[2]]],
     }
+    if arg_decode is not None:
+        cases["arg_decode"] = arg_decode
     cases_path = grader / "cases.json"
     result_path = grader / "result.json"
     cases_path.write_text(json.dumps(cases), encoding="utf-8")
@@ -59,3 +69,36 @@ def test_audit_hook_rejects_subprocess_and_allows_runner_result_write(tmp_path):
             {"ok": True, "value": 2},
         ],
     }
+
+
+def test_runner_hex_decoding_and_json_return_validation(tmp_path):
+    parsed = _run_submission(
+        tmp_path / "parsed",
+        "def parse(data):\n"
+        "    return {'hex': data.hex(), 'length': len(data), "
+        "'nested': [None, 7, 'ok']}\n",
+        case_arguments=[["00ff"], ["6162"]],
+        function_name="parse",
+        return_type="json",
+        arg_decode="hex",
+    )
+    assert parsed["outputs"] == [
+        {
+            "ok": True,
+            "value": {"hex": "00ff", "length": 2, "nested": [None, 7, "ok"]},
+        },
+        {
+            "ok": True,
+            "value": {"hex": "6162", "length": 2, "nested": [None, 7, "ok"]},
+        },
+    ]
+
+    rejected = _run_submission(
+        tmp_path / "rejected",
+        "def parse(data):\n    return {'invalid': True}\n",
+        case_arguments=[["00"]],
+        function_name="parse",
+        return_type="json",
+        arg_decode="hex",
+    )
+    assert rejected["outputs"] == [{"ok": False, "error": "TypeError"}]

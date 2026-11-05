@@ -1,0 +1,6 @@
+{
+  "name": "checker_oracle",
+  "operation": "checker_oracle",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

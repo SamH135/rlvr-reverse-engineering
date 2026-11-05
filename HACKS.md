@@ -92,3 +92,17 @@ expected outcomes.
 The result write remains outside `/proc` and is permitted after the hook is installed.
 Residual risk: a pure-Python x86 emulator of the embedded code that fits within the
 16 KiB deliverable limit is treated as legitimate reverse-engineering work.
+
+## formats
+
+The reader and trusted host parser use canonical JSON (sorted keys and compact
+separators). Scoring is binary: every valid hidden file must return its parsed object
+and every invalid file must return `None`; valid/invalid pass fractions are metrics.
+The shared runner decodes hexadecimal case arguments to bytes and rejects boolean or
+otherwise non-JSON values.
+
+`uv run python qc/run_formats_attacks.py` exercises gold, no-op, reader-oracle and
+embedded-reader attempts, native execution, sample hardcoding, valid-only parsing,
+forged results, scope attacks, import errors, and timeouts on levels 0 and 3, seeds 0
+and 1; all 60 checks matched their expected outcomes. The L4 reader uses XOR-encoded
+constants, opaque predicates, and the shared control-flow-flattening emitter.

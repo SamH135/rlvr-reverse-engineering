@@ -16,6 +16,18 @@ MAX_DELIVERABLE_BYTES = 16 * 1024
 MAX_RESULT_BYTES = 1_000_000
 
 
+def _valid_json_value(value: Any) -> bool:
+    if value is None or isinstance(value, str) or type(value) is int:
+        return True
+    if isinstance(value, list):
+        return all(_valid_json_value(item) for item in value)
+    if isinstance(value, dict):
+        return all(
+            type(key) is str and _valid_json_value(item) for key, item in value.items()
+        )
+    return False
+
+
 def _clean_submission(deliverable: str) -> bool:
     valid = True
     for path in REPO_ROOT.iterdir():
@@ -153,17 +165,27 @@ def run_hidden(cases_path: Path, result_path: Path) -> None:
     else:
         for arguments in cases:
             try:
+                if payload.get("arg_decode") == "hex":
+                    arguments = [bytes.fromhex(argument) for argument in arguments]
                 function = getattr(module, payload["function_name"])
                 value = function(*arguments)
                 if payload["return_type"] == "str":
                     valid_value = isinstance(value, str)
                 elif payload["return_type"] == "uint32":
                     valid_value = type(value) is int and 0 <= value < 2**32
+                elif payload["return_type"] == "json":
+                    valid_value = value is None or (
+                        isinstance(value, dict) and _valid_json_value(value)
+                    )
                 else:
                     raise ValueError("unknown return type")
                 if not valid_value:
                     raise TypeError("submission returned an invalid value")
-                json.dumps(value, allow_nan=False)
+                encoded = json.dumps(
+                    value, sort_keys=True, separators=(",", ":"), allow_nan=False
+                )
+                if payload["return_type"] == "json":
+                    json.loads(encoded)
                 outputs.append({"ok": True, "value": value})
             except BaseException as error:  # noqa: BLE001
                 outputs.append({"ok": False, "error": type(error).__name__})
