@@ -1,0 +1,6 @@
+{
+  "name": "forge_result",
+  "operation": "forge_result",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

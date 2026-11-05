@@ -1,0 +1,6 @@
+{
+  "name": "constant_output",
+  "operation": "constant_output",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

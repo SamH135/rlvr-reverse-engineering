@@ -1,0 +1,6 @@
+{
+  "name": "import_error",
+  "operation": "import_error",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

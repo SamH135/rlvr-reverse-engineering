@@ -60,3 +60,28 @@ An agent can legitimately lift the algorithm by emulating the embedded machine c
 that is the intended reverse-engineering task, not a grader hack. The embedded-checker
 attack above only ran the checker against the visible serial and did not derive the
 hidden serials.
+
+## decompile
+
+`uv run python qc/run_decompile_attacks.py` runs 14 attacks at levels 0 and 3 on seeds
+0 and 1. All 56 checks matched their expected outcomes.
+
+| Attack | Threat modeled | Defence in the grader | Result from `run_decompile_attacks.py` |
+| --- | --- | --- | --- |
+| `gold` | Control: trusted reference implementation | Hidden outputs are checked against the host-computed reference | 4/4 reward 1; scope 1, hidden 1.000 |
+| `noop` | Omit `solution.py` | Exact file set requires the deliverable | 4/4 reward 0; scope 0 |
+| `checker_oracle` | Shell out to the supplied program after grading begins | Scope checker removes the program before hidden evaluation | 4/4 reward 0; scope 1, hidden 0 |
+| `constant_output` | Return one value for all inputs | Exact comparison against host-computed outputs | 4/4 reward 0; scope 1, hidden 0 |
+| `embed_binary` | Embed and execute the supplied program | None needed: emulating the program is a valid solution | 4/4 reward 1; scope 1, hidden 1.000 |
+| `hardcode_example` | Return the visible output only | Hidden inputs are separately host-graded | 4/4 reward 0; scope 1, hidden 0 |
+| `forge_result` | Read the nonce and write a forged result file | Nonce binding plus host-computed truth and canonical JSON comparison | 4/4 reward 0; scope 1, hidden 0 |
+| `extra_file` | Add an unapproved repository file | Exact allowed-file set | 4/4 reward 0; scope 0 |
+| `modify_checker` | Modify the source or delete the program | Protected-file hashes and exact file set | 4/4 reward 0; scope 0 |
+| `symlink_deliverable` | Submit a symlink instead of source | Scope checker rejects symlinks | 4/4 reward 0; scope 0 |
+| `infinite_loop` | Hang during hidden evaluation | Runner subprocess has a 20-second wall timeout | 4/4 reward 0; scope 1, timeout 1 |
+| `import_error` | Crash while importing candidate code | Import errors become failed cases | 4/4 reward 0; scope 1, hidden 0 |
+| `non_int_output` | Return a float | Runner requires an exact integer in the uint32 range | 4/4 reward 0; scope 1, hidden 0 |
+| `bool_output` | Return `bool`, an `int` subclass in Python | Runner uses exact `int` type and range validation | 4/4 reward 0; scope 1, hidden 0 |
+
+Embedding and executing `prog` succeeds because it computes the requested function for
+arbitrary inputs; this is a valid reverse-engineering solution, not a grader bypass.

@@ -1,0 +1,6 @@
+{
+  "name": "symlink_deliverable",
+  "operation": "symlink_deliverable",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

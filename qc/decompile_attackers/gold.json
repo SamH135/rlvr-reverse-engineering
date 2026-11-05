@@ -1,0 +1,6 @@
+{
+  "name": "gold",
+  "operation": "gold",
+  "seeds": [0, 1],
+  "expected_reward": 1.0
+}

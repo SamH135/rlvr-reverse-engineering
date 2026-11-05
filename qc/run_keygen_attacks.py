@@ -137,7 +137,7 @@ async def apply_operation(
                 b"import json\nimport os\n"
                 b"_cases = json.load(open('/grader/cases.json'))\n"
                 b"json.dump({'nonce': _cases['nonce'], 'outputs': "
-                b"[{'ok': True, 'value': '0000-0000'} for _ in _cases['names']]}, "
+                b"[{'ok': True, 'value': '0000-0000'} for _ in _cases['cases']]}, "
                 b"open('/grader/result.json', 'w'))\n"
                 b"os._exit(0)\n"
             ),
