@@ -34,3 +34,29 @@ outcomes (26/26).
   convention directory; this grader does not consume that directory.
 - Surface variation is shallow: six templates and a few mutations each leave
   memorization risk. More task families and a held-out template split are future work.
+
+## keygen
+
+`uv run python qc/run_keygen_attacks.py` runs 13 attacks on seeds 0 and 1 at
+levels 0 and 3. All 52 checks matched their expected outcomes.
+
+| Attack | Threat modeled | Defence in the grader | Result from `run_keygen_attacks.py` |
+| --- | --- | --- | --- |
+| `gold` | Control: reference keygen implementation | Hidden serials are computed from the trusted host reference | 4/4 reward 1; scope 1, hidden 1.000 |
+| `noop` | Omit `keygen.py` | Exact file set requires `keygen.py` | 4/4 reward 0; scope 0 |
+| `hardcode_example` | Return the visible example serial only | Hidden names differ from the example and use host-computed truth | 4/4 reward 0; scope 1, hidden 0 |
+| `constant_serial` | Return one serial for every name | Exact hidden-output comparison | 4/4 reward 0; scope 1, hidden 0 |
+| `checker_oracle` | Shell out to the installed checker | Checker files are deleted before hidden evaluation | 4/4 reward 0; scope 1, hidden 0 |
+| `embed_checker` | Embed and run the checker binary or script | Host-computed hidden serials remain the scoring truth | 4/4 reward 0; scope 1, hidden 0 |
+| `forge_result` | Read the nonce and forge a result file | Nonce binds the run; hidden truth is computed on the host | 4/4 reward 0; scope 1, hidden 0 |
+| `modify_checker` | Change the checker source or delete its binary | Protected source hashes and exact file set | 4/4 reward 0; scope 0 |
+| `extra_file` | Add an unapproved repository file | Exact allowed-file set | 4/4 reward 0; scope 0 |
+| `symlink_keygen` | Submit `keygen.py` as a symlink | Scope checker rejects symlinks | 4/4 reward 0; scope 0 |
+| `infinite_loop` | Hang during hidden evaluation | Runner subprocess has a 20-second wall timeout | 4/4 reward 0; scope 1, timeout 1 |
+| `import_error` | Fail while importing candidate code | Import errors become failed cases, not grading errors | 4/4 reward 0; scope 1, hidden 0 |
+| `non_string` | Return a non-string serial | Non-string returns become failed cases | 4/4 reward 0; scope 1, hidden 0 |
+
+An agent can legitimately lift the algorithm by emulating the embedded machine code;
+that is the intended reverse-engineering task, not a grader hack. The embedded-checker
+attack above only ran the checker against the visible serial and did not derive the
+hidden serials.

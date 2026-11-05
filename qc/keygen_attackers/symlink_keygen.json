@@ -1,0 +1,6 @@
+{
+  "name": "symlink_keygen",
+  "operation": "symlink_keygen",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

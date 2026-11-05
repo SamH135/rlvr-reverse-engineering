@@ -1,0 +1,6 @@
+{
+  "name": "non_string",
+  "operation": "non_string",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

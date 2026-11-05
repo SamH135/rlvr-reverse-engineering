@@ -1,0 +1,6 @@
+{
+  "name": "embed_checker",
+  "operation": "embed_checker",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

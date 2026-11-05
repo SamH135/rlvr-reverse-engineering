@@ -1,0 +1,6 @@
+{
+  "name": "constant_serial",
+  "operation": "constant_serial",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

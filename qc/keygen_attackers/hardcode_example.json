@@ -1,0 +1,6 @@
+{
+  "name": "hardcode_example",
+  "operation": "hardcode_example",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}
