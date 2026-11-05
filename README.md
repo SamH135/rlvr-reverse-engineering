@@ -1,13 +1,194 @@
 # RLVR Coding Environment
 
-A standalone Verifiers v1 taskset package for generated Python bug-fix tasks.
+An on-demand, seed-generated RLVR task suite for coding agents. Its main track is
+defensive reverse engineering: implement Python behavior from generated key checkers,
+compiled programs, and binary formats, each with levels L0–L4. A Python bug-fixing
+family provides a calibration and warm-up track. Tasks are execution-graded in
+isolated scoring sandboxes, with adversarial QC suites for grader attacks. Instances
+are generated from seeds rather than drawn from a fixed benchmark corpus, supporting
+contamination-resistant and effectively unbounded evaluation; the current template
+variation is intentionally modest and is not a guarantee against memorization.
 
-Run validation or a rollout locally with Docker:
-`uv run vf-validate bugfix --runtime.type docker` or
-`uv run vf-run bugfix --env.agent.runtime.type docker`.
+## Task families
 
-Build the keygen checker image locally before validating that taskset:
-`docker build -f docker/keygen.Dockerfile -t rlvr-keygen:0.1 .`
+| Family | What the agent gets | Deliverable | Level progression |
+| --- | --- | --- | --- |
+| **bugfix** | A generated Python module and visible tests | `lib.py` | L1: one buggy function and a visible failing test. L2: two buggy functions from different templates; visible tests pass, while hidden tests cover both. |
+| **keygen** | A generated license checker and one example name/serial | `keygen.py` | L0: readable Python checker. L1: C source and an `-O0` binary. L2: symbol-rich `-O0` binary only. L3: stripped `-O2` binary. L4: L3 plus XOR-encoded constants. |
+| **decompile** | A generated program that maps lists of uint32 values to a uint32 result, plus one example | `solution.py` | L0: C source and an `-O0` binary. L1: symbol-rich `-O0` binary only. L2: stripped `-O2` binary. L3: generated control-flow flattening. L4: L3 plus opaque predicates and XOR-encoded constants. |
+| **formats** | A generated binary reader and two valid sample files | `parser.py` | L0: C source and an `-O0` reader with fixed-width little-endian fields. L1: symbol-rich `-O0` binary; adds per-field endianness and ASCII strings. L2: stripped `-O2` reader with a checksum. L3: adds ULEB128 and flag-gated optional fields. L4: rolling-XOR-obfuscated record payload plus flattened control flow and encoded constants. |
 
-The decompile taskset reuses `rlvr-keygen:0.1`; validate it with
-`uv run vf-validate decompile --runtime.type docker`.
+All three reverse-engineering families generate 50 hidden cases per task. Formats
+uses 38 valid and 12 invalid files. Bugfix generates 50 hidden cases per function.
+
+## Architecture
+
+**Verifiers v1** supplies the taskset/task lifecycle, Docker runtime integration,
+artifact collection and isolated scoring. This repository supplies deterministic
+family generators, task setup and prompts, trusted references, grading logic, and
+attack suites. Keygen, decompile, and formats share the isolated function runner and
+host-side comparison; bugfix uses its family-specific test runner.
+
+```mermaid
+flowchart TD
+    A["Seed and level"] --> B["Taskset and deterministic generator"]
+    B --> C["Agent sandbox: inspect target and edit one deliverable"]
+    C --> D["Verifiers v1 collects declared artifact"]
+    D --> E["Fresh isolated scoring sandbox restores artifact"]
+    E --> F{"Family"}
+    F -->|RE families| G["Common scope check: paths, hashes, symlinks, size"]
+    G --> H["Cleanup: retain only the deliverable"]
+    H --> I["Audit-hooked runner executes hidden cases"]
+    F -->|bugfix| J["Bugfix-specific scope and test runner"]
+    I --> K["Host-side trusted truth comparison"]
+    J --> K
+    K --> L{"Scope, runner, and all required cases pass?"}
+    L -->|yes| M["Reward = 1.0"]
+    L -->|no| N["Reward = 0.0"]
+```
+
+For the reverse-engineering families, the common scope check verifies the expected
+repository contents, protected hashes, symlink absence, and the 16 KiB deliverable
+limit; it then removes repository files other than the deliverable. The shared runner
+installs its audit hook before importing candidate code. Bugfix uses its own protected
+file/scope checks and visible/hidden test flow rather than that cleanup and hook.
+
+## Security model: why this is hard to cheat
+
+The QC counts below are expected checks in the repository's attack scripts; a passing
+suite is targeted evidence, not a proof of security.
+
+| Family | QC coverage | Attacks exercised and defenses |
+| --- | --- | --- |
+| **bugfix** | 26 expected checks per run at L1 and L2 | Forged results and visible-test edits are checked against protected files and host-computed hidden truth. Exact file/symlink checks, timeouts, and malformed/import failure handling cover scope and execution attacks. |
+| **keygen** | 52 checks across L0/L3 and two seeds | Checker-oracle and embedded-checker attacks meet cleanup before grading and the shared audit hook. Exact scope, protected hashes, host-side truth, nonce-bound results, type checks, and timeout handling cover other attacks. |
+| **decompile** | 64 checks across L0/L3 and two seeds | Includes binary wrapping, ctypes/mmap execution, and hook-rewrite attacks. The shared audit hook denies native execution paths; host truth, scope checks, and timeouts address the other attacks. |
+| **formats** | 60 checks across L0/L3 and two seeds | Includes reader-oracle, embedded-reader, native-execution, sample-hardcoding, and valid-only attacks. Hidden valid and invalid files, strict JSON return validation, host truth, scope checks, and binary reward defeat these shortcuts. |
+
+The shared runner rejects subprocess/process creation, ctypes and mmap execution paths,
+`/proc` opens, and attempts to rewrite the audit hook. It treats exceptions and invalid
+return types as failed cases. Trusted references compute expected results outside the
+submission; a nonce-bound result file does not let a submission choose the truth.
+
+**Residual risks:** the attack lists are finite and do not establish complete isolation.
+The task containers request `NetworkPolicyConfig(allow=[])`; the documented network
+probe checks that route, not every possible route. Candidate code can read the grader
+cases and nonce, but host-side truth comparison still applies. Emulating a disclosed
+checker/program in Python is legitimate reverse-engineering work, not a grader hack.
+Bugfix currently has six templates and limited mutations, so memorization remains a
+risk; held-out splits are planned.
+
+## Reward design
+
+Rewards are binary. A submission earns `1.0` only when scope is valid, grading
+completes, and every required hidden case matches trusted output; otherwise it earns
+`0.0`. Formats requires all valid and invalid cases to pass. Its
+`valid_pass_frac` and `invalid_pass_frac` are diagnostic metrics, not partial reward.
+
+Diagnostic metrics include `scope_ok`, `hidden_pass_frac`, `runner_timeout`, and
+family-specific `visible_pass`, `example_ok`, `valid_pass_frac`, and
+`invalid_pass_frac`. The reverse-engineering runner enforces exact output types:
+strings for keygen, uint32 integers (not booleans) for decompile, and JSON objects or
+`None` with only JSON-compatible values for formats.
+
+Grading fails closed on scope violations, import/runtime exceptions, invalid outputs,
+timeouts, missing or malformed results, nonce mismatches, and incomplete case lists.
+Provider/API errors occur outside the grader and should be tracked separately from
+agent submissions that execute but fail tests.
+
+## Quickstart
+
+From the repository root:
+
+```bash
+uv sync
+docker build -f docker/keygen.Dockerfile -t rlvr-keygen:0.1 .
+```
+
+The reverse-engineering families reuse that local image; bugfix uses its Python task
+image. Validate all levels with the Docker runtime:
+
+```bash
+for family in keygen decompile formats; do
+  for level in 0 1 2 3 4; do
+    uv run vf-validate "$family" --runtime.type docker --taskset.level "$level" -n 3
+  done
+done
+for level in 1 2; do
+  uv run vf-validate bugfix --runtime.type docker --taskset.level "$level" -n 3
+done
+```
+
+Run the grader-attack suites:
+
+```bash
+uv run python qc/run_attacks.py
+uv run python qc/run_attacks.py --level 2
+uv run python qc/run_keygen_attacks.py
+uv run python qc/run_decompile_attacks.py
+uv run python qc/run_formats_attacks.py
+```
+
+Example rollouts (configure the named API-key variables through your usual secret
+manager; do not put keys in the command line). Set `LITELLM_GEMINI_MODEL` to a model
+alias configured in your local LiteLLM proxy:
+
+```bash
+uv run vf-run bugfix -n 2 -r 1 -c 1 -m "$LITELLM_GEMINI_MODEL" \
+  --client.base-url http://localhost:4000/v1 \
+  --client.api-key-var GEMINI_API_KEY \
+  --env.agent.runtime.type docker
+```
+
+For a local Ollama model:
+
+```bash
+uv run vf-run bugfix -n 2 -r 1 -c 1 -m qwen3:1.7b \
+  --client.base-url http://localhost:11434/v1 \
+  --client.api-key-var OLLAMA_KEY \
+  --env.agent.runtime.type docker
+```
+
+## Baselines
+
+| Model | Family | Level | Solved/attempted | Notes |
+| --- | --- | --- | --- | --- |
+| TBD | TBD | TBD | TBD | No completed baseline results are recorded in the repository yet. |
+
+## Scope and responsible use
+
+Targets are generated by this project; the tasksets do not ask agents to inspect
+third-party or closed-source software. Sandboxes are configured without network
+allow-lists. Deliverables are analysis-oriented Python implementations of generated
+behavior—not exploits, shellcode, evasion, or packing. Use reverse-engineering
+techniques only on targets you own or are authorized to analyze. This section is not
+legal advice.
+
+Any future task family based on real enterprise code must use code the operator is
+authorized to provide and process, with appropriate data handling and approval.
+
+## RL glossary
+
+- **RLVR:** reinforcement learning with rewards computed by verifiable task outcomes.
+- **Rollout:** one sampled agent trajectory through a task and its tool interactions.
+- **Verifier:** code that evaluates a completed trajectory and emits reward/metrics.
+- **Reward hacking:** exploiting a verifier shortcut rather than satisfying the task.
+- **GRPO:** Group Relative Policy Optimization, which updates a policy using relative
+  rewards among sampled completions for a prompt.
+- **pass@k:** estimated chance that at least one of `k` sampled attempts solves a task.
+- **Held-out split:** seeds or templates reserved from training for evaluation.
+- **Learnable band:** task difficulty where a model sometimes succeeds and sometimes
+  fails, providing a useful learning signal.
+
+## Roadmap
+
+- Establish per-level baselines across the task families.
+- Add held-out seed/template splits for stronger generalization measurement.
+- Run a small GRPO + LoRA experiment on a free GPU.
+- Explore a legacy business-rule family on authorized real enterprise codebases.
+- Add a true black-box level after non-root sandbox support is verified.
+
+## Credits and license
+
+This project uses [Verifiers v1](https://github.com/PrimeIntellect-ai/verifiers) by
+Prime Intellect. This repository is MIT-licensed; see [`LICENSE`](LICENSE).
