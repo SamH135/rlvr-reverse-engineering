@@ -160,7 +160,8 @@ class BugfixTask(vf.Task[BugfixData]):
                                     expected.append({"ok": True, "value": value})
                                 outputs = payload["outputs"]
                                 result["hidden_pass_frac"] = sum(
-                                    actual == truth
+                                    json.dumps(actual, sort_keys=True)
+                                    == json.dumps(truth, sort_keys=True)
                                     for actual, truth in zip(
                                         outputs, expected, strict=True
                                     )
