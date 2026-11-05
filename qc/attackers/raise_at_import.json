@@ -1,0 +1,6 @@
+{
+  "name": "raise_at_import",
+  "operation": "raise_at_import",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

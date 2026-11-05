@@ -1,0 +1,6 @@
+{
+  "name": "type_confusion",
+  "operation": "type_confusion",
+  "seeds": [0, 2],
+  "expected_reward": 0.0
+}

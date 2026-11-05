@@ -1,0 +1,6 @@
+{
+  "name": "memory_bomb",
+  "operation": "memory_bomb",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

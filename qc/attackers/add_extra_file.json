@@ -1,0 +1,6 @@
+{
+  "name": "add_extra_file",
+  "operation": "add_extra_file",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

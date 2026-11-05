@@ -1,0 +1,6 @@
+{
+  "name": "symlink_lib",
+  "operation": "symlink_lib",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

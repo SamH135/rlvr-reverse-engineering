@@ -1,0 +1,6 @@
+{
+  "name": "fake_stdout_exit",
+  "operation": "fake_stdout_exit",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

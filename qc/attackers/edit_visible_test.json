@@ -1,0 +1,6 @@
+{
+  "name": "edit_visible_test",
+  "operation": "edit_visible_test",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}

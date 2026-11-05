@@ -1,0 +1,6 @@
+{
+  "name": "special_case_visible",
+  "operation": "special_case_visible",
+  "seeds": [0, 1],
+  "expected_reward": 0.0
+}
