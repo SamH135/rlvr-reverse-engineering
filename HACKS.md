@@ -46,8 +46,8 @@ levels 0 and 3. All 52 checks matched their expected outcomes.
 | `noop` | Omit `keygen.py` | Exact file set requires `keygen.py` | 4/4 reward 0; scope 0 |
 | `hardcode_example` | Return the visible example serial only | Hidden names differ from the example and use host-computed truth | 4/4 reward 0; scope 1, hidden 0 |
 | `constant_serial` | Return one serial for every name | Exact hidden-output comparison | 4/4 reward 0; scope 1, hidden 0 |
-| `checker_oracle` | Shell out to the installed checker | Checker files are deleted before hidden evaluation | 4/4 reward 0; scope 1, hidden 0 |
-| `embed_checker` | Embed and run the checker binary or script | Host-computed hidden serials remain the scoring truth | 4/4 reward 0; scope 1, hidden 0 |
+| `checker_oracle` | Shell out to the installed checker | Checker files are deleted before hidden evaluation; audit hook denies process creation | 4/4 reward 0; scope 1, hidden 0 |
+| `embed_checker` | Embed and run the checker binary or script | Audit hook denies process creation; host computes hidden serials | 4/4 reward 0; scope 1, hidden 0 |
 | `forge_result` | Read the nonce and forge a result file | Nonce binds the run; hidden truth is computed on the host | 4/4 reward 0; scope 1, hidden 0 |
 | `modify_checker` | Change the checker source or delete its binary | Protected source hashes and exact file set | 4/4 reward 0; scope 0 |
 | `extra_file` | Add an unapproved repository file | Exact allowed-file set | 4/4 reward 0; scope 0 |
@@ -63,8 +63,12 @@ hidden serials.
 
 ## decompile
 
-`uv run python qc/run_decompile_attacks.py` runs 14 attacks at levels 0 and 3 on seeds
-0 and 1. All 56 checks matched their expected outcomes.
+The attack suite exposed a binary-wrap bypass: `embed_binary` initially scored 1 by
+embedding and subprocessing the supplied executable. The shared runner now installs a
+Python audit hook before importing the submission. It denies process execution, ctypes
+and mmap execution paths, `/proc` opens, and attempts to rewrite the hook. The updated
+suite runs 16 attacks at levels 0 and 3 on seeds 0 and 1; all 64 checks matched their
+expected outcomes.
 
 | Attack | Threat modeled | Defence in the grader | Result from `run_decompile_attacks.py` |
 | --- | --- | --- | --- |
@@ -72,7 +76,9 @@ hidden serials.
 | `noop` | Omit `solution.py` | Exact file set requires the deliverable | 4/4 reward 0; scope 0 |
 | `checker_oracle` | Shell out to the supplied program after grading begins | Scope checker removes the program before hidden evaluation | 4/4 reward 0; scope 1, hidden 0 |
 | `constant_output` | Return one value for all inputs | Exact comparison against host-computed outputs | 4/4 reward 0; scope 1, hidden 0 |
-| `embed_binary` | Embed and execute the supplied program | None needed: emulating the program is a valid solution | 4/4 reward 1; scope 1, hidden 1.000 |
+| `embed_binary` | Embed the executable and run it with subprocess | Audit hook denies process creation before candidate import | 4/4 reward 0; scope 1, hidden 0 |
+| `ctypes_exec` | Call embedded machine code through ctypes and mmap | Audit hook denies ctypes/mmap imports and execution events | 4/4 reward 0; scope 1, hidden 0 |
+| `unhook` | Rewrite the audit hook, then subprocess the embedded program | Audit hook rejects function code replacement and process creation | 4/4 reward 0; scope 1, hidden 0 |
 | `hardcode_example` | Return the visible output only | Hidden inputs are separately host-graded | 4/4 reward 0; scope 1, hidden 0 |
 | `forge_result` | Read the nonce and write a forged result file | Nonce binding plus host-computed truth and canonical JSON comparison | 4/4 reward 0; scope 1, hidden 0 |
 | `extra_file` | Add an unapproved repository file | Exact allowed-file set | 4/4 reward 0; scope 0 |
@@ -83,5 +89,6 @@ hidden serials.
 | `non_int_output` | Return a float | Runner requires an exact integer in the uint32 range | 4/4 reward 0; scope 1, hidden 0 |
 | `bool_output` | Return `bool`, an `int` subclass in Python | Runner uses exact `int` type and range validation | 4/4 reward 0; scope 1, hidden 0 |
 
-Embedding and executing `prog` succeeds because it computes the requested function for
-arbitrary inputs; this is a valid reverse-engineering solution, not a grader bypass.
+The result write remains outside `/proc` and is permitted after the hook is installed.
+Residual risk: a pure-Python x86 emulator of the embedded code that fits within the
+16 KiB deliverable limit is treated as legitimate reverse-engineering work.

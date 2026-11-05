@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path("/app/repo")
+REPO_ROOT = Path(os.environ.get("RLVR_REPO_ROOT", "/app/repo"))
 MAX_DELIVERABLE_BYTES = 16 * 1024
 MAX_RESULT_BYTES = 1_000_000
 
@@ -96,6 +96,49 @@ def run_hidden(cases_path: Path, result_path: Path) -> None:
     payload = json.loads(cases_path.read_text())
     cases = payload["cases"]
     outputs = []
+
+    def _deny(event: str, args: tuple[Any, ...]) -> None:
+        if event in {
+            "subprocess.Popen",
+            "os.system",
+            "os.exec",
+            "os.posix_spawn",
+            "os.spawn",
+            "os.fork",
+            "os.forkpty",
+            "os.vfork",
+            "pty.spawn",
+            "mmap.__new__",
+        } or event.startswith("ctypes."):
+            raise PermissionError(f"audit event denied: {event}")
+        if event == "import" and args[0].split(".")[0] in {
+            "ctypes",
+            "_ctypes",
+            "cffi",
+            "mmap",
+            "_posixsubprocess",
+        }:
+            raise PermissionError(f"audit event denied: {event}")
+        if event == "open" and isinstance(args[0], (str, bytes, os.PathLike)):
+            path = Path(os.fsdecode(args[0]))
+            proc = Path("/proc")
+            absolute = Path(os.path.abspath(path))
+            resolved = path.resolve()
+            if (
+                absolute == proc
+                or proc in absolute.parents
+                or resolved == proc
+                or proc in resolved.parents
+            ):
+                raise PermissionError(f"audit event denied: {event}")
+        if (
+            event == "object.__setattr__"
+            and len(args) > 1
+            and args[1] in {"__code__", "__closure__", "__defaults__"}
+        ):
+            raise PermissionError(f"audit event denied: {event}")
+
+    sys.addaudithook(_deny)
     try:
         spec = importlib.util.spec_from_file_location(
             f"_{Path(payload['deliverable']).stem}_submission",

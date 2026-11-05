@@ -78,6 +78,46 @@ def _embedded_source(binary: bytes) -> str:
     )
 
 
+def _ctypes_exec_source() -> str:
+    return (
+        "import ctypes\nimport mmap\n\n"
+        "_CODE = b'\\xb8\\x00\\x00\\x00\\x00\\xc3'\n"
+        "def f(xs):\n"
+        "    region = mmap.mmap(-1, len(_CODE), "
+        "prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)\n"
+        "    region.write(_CODE)\n"
+        "    address = ctypes.addressof(ctypes.c_char.from_buffer(region))\n"
+        "    function = ctypes.CFUNCTYPE(ctypes.c_uint32)(address)\n"
+        "    return function()\n"
+    )
+
+
+def _unhook_source(binary: bytes) -> str:
+    encoded = base64.b64encode(zlib.compress(binary, 9)).decode("ascii")
+    return (
+        "import base64\nimport gc\nimport os\nimport zlib\n\n"
+        f"_PROGRAM = {encoded!r}\n"
+        "_PATH = '/tmp/decompile-unhook-prog'\n"
+        "def _replacement(event, args):\n"
+        "    return None\n"
+        "for _object in gc.get_objects():\n"
+        "    if getattr(_object, '__name__', None) == '_deny':\n"
+        "        try:\n"
+        "            _object.__code__ = _replacement.__code__\n"
+        "        except (AttributeError, PermissionError, TypeError):\n"
+        "            pass\n"
+        "def f(xs):\n"
+        "    if not os.path.exists(_PATH):\n"
+        "        with open(_PATH, 'wb') as output:\n"
+        "            output.write(zlib.decompress(base64.b64decode(_PROGRAM)))\n"
+        "        os.chmod(_PATH, 0o755)\n"
+        "    import subprocess\n"
+        "    result = subprocess.run([_PATH, *map(str, xs)], "
+        "capture_output=True, text=True, timeout=1, check=True)\n"
+        "    return int(result.stdout.strip())\n"
+    )
+
+
 async def apply_operation(
     attack: dict[str, Any], data: DecompileData, runtime: vf.Runtime
 ) -> None:
@@ -94,6 +134,16 @@ async def apply_operation(
         binary = await runtime.read(f"{REPO_ROOT}/prog", max_bytes=1_000_000)
         await runtime.write(
             f"{REPO_ROOT}/solution.py", _embedded_source(binary).encode("utf-8")
+        )
+    elif operation == "ctypes_exec":
+        await runtime.write(
+            f"{REPO_ROOT}/solution.py", _ctypes_exec_source().encode("utf-8")
+        )
+    elif operation == "unhook":
+        binary = await runtime.read(f"{REPO_ROOT}/prog", max_bytes=1_000_000)
+        await runtime.write(
+            f"{REPO_ROOT}/solution.py",
+            _unhook_source(binary).encode("utf-8"),
         )
     elif operation == "hardcode_example":
         await runtime.write(
@@ -196,9 +246,9 @@ async def main() -> int:
         json.loads(path.read_text(encoding="utf-8"))
         for path in sorted(ATTACK_DIR.glob("*.json"))
     ]
-    if len(attacks) != 14:
+    if len(attacks) != 16:
         raise ValueError(
-            f"expected 14 decompile attack descriptors, found {len(attacks)}"
+            f"expected 16 decompile attack descriptors, found {len(attacks)}"
         )
     config = ValidateConfig(runtime=vf.DockerConfig(allow=[], memory=4.0))
     rows = []
