@@ -1,0 +1,262 @@
+"""Verifiers taskset for isolated grading of generated Python bugfixes."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import secrets
+from importlib.resources import files
+from typing import Any
+
+import verifiers.v1 as vf
+from pydantic import Field
+from verifiers.v1.utils.artifacts import collect
+
+from rlvr_coding_env.families.bugfix.generator import generate
+
+REPO_ROOT = "/app/repo"
+GRADER_ROOT = "/grader"
+RUNNER_TIMEOUT_SECONDS = 20
+MAX_RESULT_BYTES = 1_000_000
+
+
+class BugfixData(vf.TaskData):
+    seed: int
+    template_id: str
+    mutation_id: str
+    target_function: str
+    files: dict[str, str]
+    protected_hashes: dict[str, str]
+    hidden_inputs: list[list[object]]
+    reference_source: str
+
+
+class BugfixTask(vf.Task[BugfixData]):
+    NEEDS_CONTAINER = True
+
+    async def setup(self, trace: vf.Trace, runtime: vf.Runtime) -> None:
+        for path, content in self.data.files.items():
+            await runtime.write(f"{REPO_ROOT}/{path}", content.encode("utf-8"))
+
+    async def stage_verifier(self, trace: vf.Trace, runtime: vf.Runtime) -> None:
+        runner = (
+            files("rlvr_coding_env.families.bugfix").joinpath("runner.py").read_bytes()
+        )
+        nonce = secrets.token_urlsafe(32)
+        cases = {
+            "nonce": nonce,
+            "target_function": self.data.target_function,
+            "inputs": self.data.hidden_inputs,
+        }
+        self._grading_nonce = nonce
+        await runtime.write(f"{GRADER_ROOT}/runner.py", runner)
+        await runtime.write(
+            f"{GRADER_ROOT}/cases.json",
+            json.dumps(cases, allow_nan=False).encode("utf-8"),
+        )
+        await runtime.write(
+            f"{GRADER_ROOT}/protected.json",
+            json.dumps(self.data.protected_hashes, sort_keys=True).encode("utf-8"),
+        )
+        result = await runtime.run(["rm", "-f", f"{GRADER_ROOT}/result.json"], {})
+        if result.exit_code:
+            raise RuntimeError("could not clear the grader result file")
+
+    async def _grading(self, runtime: vf.Runtime, trace: vf.Trace) -> dict[str, Any]:
+        cached = trace.info.get("bugfix_grading")
+        if cached is not None:
+            return cached
+
+        lock = getattr(self, "_grading_lock", None)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._grading_lock = lock
+        async with lock:
+            cached = trace.info.get("bugfix_grading")
+            if cached is not None:
+                return cached
+            result = await self._compute_grading(runtime)
+            trace.info["bugfix_grading"] = result
+            return result
+
+    async def _compute_grading(self, runtime: vf.Runtime) -> dict[str, Any]:
+        scope_result = await runtime.run(
+            [
+                "python3",
+                f"{GRADER_ROOT}/runner.py",
+                "--scope",
+                f"{GRADER_ROOT}/protected.json",
+            ],
+            {},
+        )
+        if scope_result.exit_code:
+            raise RuntimeError("the trusted scope checker failed to run")
+        try:
+            scope_ok = json.loads(scope_result.stdout).get("scope_ok") is True
+        except (json.JSONDecodeError, AttributeError):
+            raise RuntimeError(
+                "the trusted scope checker returned invalid output"
+            ) from None
+
+        result: dict[str, Any] = {
+            "scope_ok": scope_ok,
+            "hidden_pass_frac": 0.0,
+            "visible_pass": 0.0,
+            "runner_timeout": False,
+            "runner_completed": False,
+        }
+        if scope_ok:
+            command = (
+                f"exec timeout --signal=KILL {RUNNER_TIMEOUT_SECONDS}s python3 "
+                f"{GRADER_ROOT}/runner.py --run {GRADER_ROOT}/cases.json "
+                f"{GRADER_ROOT}/result.json >/dev/null 2>&1"
+            )
+            hidden_run = await runtime.run(["sh", "-c", command], {})
+            result["runner_timeout"] = hidden_run.exit_code in (124, 137)
+
+            if not result["runner_timeout"]:
+                exists = await runtime.run(
+                    ["test", "-f", f"{GRADER_ROOT}/result.json"], {}
+                )
+                if exists.exit_code == 0:
+                    size = await runtime.run(
+                        ["sh", "-c", f"wc -c < {GRADER_ROOT}/result.json"], {}
+                    )
+                    try:
+                        result_size = int(size.stdout.strip())
+                    except ValueError:
+                        result_size = MAX_RESULT_BYTES + 1
+                    if size.exit_code == 0 and result_size <= MAX_RESULT_BYTES:
+                        raw_result = await runtime.read(
+                            f"{GRADER_ROOT}/result.json",
+                            max_bytes=MAX_RESULT_BYTES,
+                        )
+                        try:
+                            payload = json.loads(raw_result)
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            payload = None
+                        if (
+                            isinstance(payload, dict)
+                            and payload.get("nonce") == self._grading_nonce
+                            and isinstance(payload.get("outputs"), list)
+                            and len(payload["outputs"]) == len(self.data.hidden_inputs)
+                        ):
+                            result["runner_completed"] = hidden_run.exit_code == 0
+                            if result["runner_completed"]:
+                                namespace: dict[str, object] = {}
+                                exec(  # noqa: S102
+                                    compile(
+                                        self.data.reference_source,
+                                        "<trusted-reference>",
+                                        "exec",
+                                    ),
+                                    namespace,
+                                )
+                                reference = namespace[self.data.target_function]
+                                expected = []
+                                for args in self.data.hidden_inputs:
+                                    value = reference(*args)
+                                    json.dumps(value, allow_nan=False)
+                                    expected.append({"ok": True, "value": value})
+                                outputs = payload["outputs"]
+                                result["hidden_pass_frac"] = sum(
+                                    actual == truth
+                                    for actual, truth in zip(
+                                        outputs, expected, strict=True
+                                    )
+                                ) / len(expected)
+
+            if not result["runner_timeout"]:
+                visible_command = (
+                    f"cd {REPO_ROOT} && exec env PYTHONPATH={REPO_ROOT} "
+                    f"timeout --signal=KILL "
+                    f"{RUNNER_TIMEOUT_SECONDS}s "
+                    "python3 tests/test_visible.py >/dev/null 2>&1"
+                )
+                visible_run = await runtime.run(["sh", "-c", visible_command], {})
+                if visible_run.exit_code in (124, 137):
+                    result["runner_timeout"] = True
+                else:
+                    result["visible_pass"] = float(visible_run.exit_code == 0)
+
+        return result
+
+    @vf.metric
+    async def scope_ok(self, runtime: vf.Runtime, trace: vf.Trace) -> float:
+        return float((await self._grading(runtime, trace))["scope_ok"])
+
+    @vf.metric
+    async def hidden_pass_frac(self, runtime: vf.Runtime, trace: vf.Trace) -> float:
+        return float((await self._grading(runtime, trace))["hidden_pass_frac"])
+
+    @vf.metric
+    async def visible_pass(self, runtime: vf.Runtime, trace: vf.Trace) -> float:
+        return float((await self._grading(runtime, trace))["visible_pass"])
+
+    @vf.metric
+    async def runner_timeout(self, runtime: vf.Runtime, trace: vf.Trace) -> float:
+        return float((await self._grading(runtime, trace))["runner_timeout"])
+
+    @vf.reward(weight=1.0)
+    async def solved(self, runtime: vf.Runtime, trace: vf.Trace) -> float:
+        grade = await self._grading(runtime, trace)
+        return float(
+            grade["scope_ok"]
+            and grade["runner_completed"]
+            and grade["hidden_pass_frac"] == 1.0
+        )
+
+    async def validate(self, runtime: vf.Runtime, trace: vf.Trace) -> bool:
+        await runtime.write(
+            f"{REPO_ROOT}/lib.py", self.data.reference_source.encode("utf-8")
+        )
+        await self.finalize(trace, runtime)
+        trace.state.artifacts = await collect(
+            runtime,
+            self.data.artifacts,
+            max_bytes=self.data.artifact_max_bytes,
+        )
+        await vf.grade_submission(self, trace, runtime)
+        return trace.reward == 1.0
+
+
+class BugfixTasksetConfig(vf.TasksetConfig):
+    num_tasks: int = Field(20, ge=1)
+    seed_offset: int = 0
+
+
+class BugfixTaskset(vf.Taskset[BugfixTask, BugfixTasksetConfig]):
+    def load(self) -> list[BugfixTask]:
+        tasks = []
+        for seed in range(
+            self.config.seed_offset,
+            self.config.seed_offset + self.config.num_tasks,
+        ):
+            instance = generate(seed)
+            data = BugfixData(
+                id=f"bugfix-{seed}",
+                prompt=(
+                    f"Issue: Fix `{instance.target_function}` in `lib.py`. "
+                    f"{instance.spec}\n\n"
+                    f"The visible test `{instance.visible_cases[0]['name']}` currently "
+                    "fails. Fix the implementation so it matches the specification "
+                    "and passes the visible test and the full hidden test suite.\n\n"
+                    f"The repository is at {REPO_ROOT}. Only edit `lib.py`; do not "
+                    "modify the tests or any other files."
+                ),
+                seed=instance.seed,
+                template_id=instance.template_id,
+                mutation_id=instance.mutation_id,
+                target_function=instance.target_function,
+                files=instance.files,
+                protected_hashes=instance.protected_hashes,
+                hidden_inputs=instance.hidden_inputs,
+                reference_source=instance.reference_source,
+                image="python:3.11-slim",
+                workdir=REPO_ROOT,
+                network=vf.NetworkPolicyConfig(allow=[]),
+                scoring=vf.ScoringConfig(mode="isolated"),
+                artifacts=[vf.Artifact(source=REPO_ROOT)],
+            )
+            tasks.append(BugfixTask(data, self.config.task))
+        return tasks
