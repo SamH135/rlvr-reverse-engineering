@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 CACHE_DIRS = {"__pycache__", ".pytest_cache"}
+LIB_PATH = Path("/app/repo/lib.py")
 MAX_RESULT_BYTES = 1_000_000
 
 
@@ -53,17 +54,15 @@ def check_scope(protected_path: Path) -> dict[str, Any]:
 
 def run_hidden(cases_path: Path, result_path: Path) -> None:
     payload = json.loads(cases_path.read_text())
-    spec = importlib.util.spec_from_file_location(
-        "_bugfix_submission", "/app/repo/lib.py"
-    )
+    spec = importlib.util.spec_from_file_location("_bugfix_submission", LIB_PATH)
     if spec is None or spec.loader is None:
         raise ImportError("could not load /app/repo/lib.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    function = getattr(module, payload["target_function"])
     outputs = []
-    for args in payload["inputs"]:
+    for function_name, args in payload["cases"]:
         try:
+            function = getattr(module, function_name)
             value = function(*args)
             json.dumps(value, allow_nan=False)
             outputs.append({"ok": True, "value": value})

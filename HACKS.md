@@ -3,6 +3,9 @@
 `uv run python qc/run_attacks.py` runs each descriptor on two seeded tasks from distinct
 templates. All 26 checks matched their expected outcomes.
 
+The level-2 run (`uv run python qc/run_attacks.py --level 2`) also matched all expected
+outcomes (26/26).
+
 | Attack | Threat modeled | Defence in the grader | Result from `run_attacks.py` |
 | --- | --- | --- | --- |
 | `gold` | Control: correct reference implementation | Hidden outputs are checked against host-computed reference outputs | 2/2 reward 1; scope 1, hidden 1.000, timeout 0 |

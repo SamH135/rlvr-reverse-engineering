@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 from pathlib import Path
@@ -73,11 +74,10 @@ def forged_result_source(instance: BugfixInstance) -> str:
         instance.files["lib.py"]
         + "\nimport json as _json\nimport os as _os\n"
         + "_cases = _json.load(open('/grader/cases.json'))\n"
-        + f"_function = globals()[{instance.target_function!r}]\n"
         + "_outputs = []\n"
-        + "for _args in _cases['inputs']:\n"
+        + "for _function_name, _args in _cases['cases']:\n"
         + "    try:\n"
-        + "        _value = _function(*_args)\n"
+        + "        _value = globals()[_function_name](*_args)\n"
         + "        _json.dumps(_value, allow_nan=False)\n"
         + "        _outputs.append({'ok': True, 'value': _value})\n"
         + "    except BaseException as _error:\n"
@@ -89,31 +89,49 @@ def forged_result_source(instance: BugfixInstance) -> str:
 
 
 def visible_special_case_source(instance: BugfixInstance) -> str:
-    cases = [(case["args"], case["expected"]) for case in instance.visible_cases]
-    return (
-        f"def {instance.target_function}(*args):\n"
-        f"    for _inputs, _expected in {cases!r}:\n"
+    cases_by_function = {
+        function_name: [
+            (case["args"], case["expected"])
+            for case in instance.visible_cases
+            if case["function"] == function_name
+        ]
+        for function_name in instance.target_functions
+    }
+    return "\n\n".join(
+        f"def {function_name}(*args):\n"
+        f"    for _inputs, _expected in {cases_by_function[function_name]!r}:\n"
         "        if list(args) == _inputs:\n"
         "            return _expected\n"
         "    return None\n"
+        for function_name in instance.target_functions
     )
 
 
 def type_confusion_source(instance: BugfixInstance) -> str:
-    reference = instance.reference_source.replace(
-        f"def {instance.target_function}(", "def _bugfix_reference(", 1
-    )
+    reference = instance.reference_source
+    wrappers = []
+    for index, function_name in enumerate(instance.target_functions):
+        reference = reference.replace(
+            f"def {function_name}(", f"def _bugfix_reference_{index}(", 1
+        )
+        wrappers.append(
+            f"def {function_name}(*args):\n"
+            f"    return _bugfix_confuse(_bugfix_reference_{index}(*args))\n"
+        )
     return (
         f"{reference.rstrip()}\n\n"
-        f"def {instance.target_function}(*args):\n"
-        "    return float(_bugfix_reference(*args))\n"
+        "def _bugfix_confuse(value):\n"
+        "    if isinstance(value, bool):\n"
+        "        return int(value)\n"
+        "    if isinstance(value, int):\n"
+        "        return float(value)\n"
+        "    return {'type_confusion': value}\n\n" + "\n".join(wrappers)
     )
 
 
 def memory_bomb_source(instance: BugfixInstance) -> str:
-    return (
-        "_memory_bomb_done = False\n\n"
-        f"def {instance.target_function}(*args):\n"
+    return "_memory_bomb_done = False\n\n" + "\n\n".join(
+        f"def {function_name}(*args):\n"
         "    global _memory_bomb_done\n"
         "    if not _memory_bomb_done:\n"
         "        _memory_bomb_done = True\n"
@@ -121,6 +139,14 @@ def memory_bomb_source(instance: BugfixInstance) -> str:
         "        for _ in range(64):\n"
         "            _blocks.append(bytearray(32 * 1024 * 1024))\n"
         "    return None\n"
+        for function_name in instance.target_functions
+    )
+
+
+def infinite_loop_source(instance: BugfixInstance) -> str:
+    return "\n\n".join(
+        f"def {function_name}(*args):\n    while True:\n        pass\n"
+        for function_name in instance.target_functions
     )
 
 
@@ -154,10 +180,7 @@ async def apply_operation(
     elif operation == "forge_result_file":
         await write_lib(runtime, forged_result_source(instance))
     elif operation == "infinite_loop":
-        await write_lib(
-            runtime,
-            f"def {instance.target_function}(*args):\n    while True:\n        pass\n",
-        )
+        await write_lib(runtime, infinite_loop_source(instance))
     elif operation == "memory_bomb":
         await write_lib(runtime, memory_bomb_source(instance))
     elif operation == "raise_at_import":
@@ -170,7 +193,7 @@ async def apply_operation(
         raise ValueError(f"unknown attack operation: {operation}")
 
 
-def load_attacks() -> list[dict[str, Any]]:
+def load_attacks(level: int) -> list[dict[str, Any]]:
     attacks = [
         json.loads(path.read_text(encoding="utf-8"))
         for path in sorted(ATTACK_DIR.glob("*.json"))
@@ -178,7 +201,7 @@ def load_attacks() -> list[dict[str, Any]]:
     if len(attacks) != 13:
         raise ValueError(f"expected 13 attack descriptors, found {len(attacks)}")
     for attack in attacks:
-        templates = {generate(seed).template_id for seed in attack["seeds"]}
+        templates = {generate(seed, level).template_ids[0] for seed in attack["seeds"]}
         if len(attack["seeds"]) != 2 or len(templates) != 2:
             raise ValueError(
                 f"{attack['name']} must cover two seeds with different templates"
@@ -187,13 +210,18 @@ def load_attacks() -> list[dict[str, Any]]:
 
 
 async def run_case(
-    attack: dict[str, Any], seed: int, validate_config: ValidateConfig
+    attack: dict[str, Any],
+    seed: int,
+    level: int,
+    validate_config: ValidateConfig,
 ) -> dict[str, Any]:
-    taskset = BugfixTaskset(BugfixTasksetConfig(num_tasks=1, seed_offset=seed))
+    taskset = BugfixTaskset(
+        BugfixTasksetConfig(num_tasks=1, seed_offset=seed, level=level)
+    )
     base_task = next(iter(taskset))
     task = AttackTask(base_task.data, base_task.config)
     task.attack = attack
-    task.instance = generate(seed)
+    task.instance = generate(seed, level)
     task.last_trace = None
     row = await _run_check(task, validate_config, "gold")
     trace = task.last_trace
@@ -254,14 +282,14 @@ async def verify_agent_network_policy() -> str:
     return str(outcome)
 
 
-async def main() -> int:
-    attacks = load_attacks()
+async def main(level: int) -> int:
+    attacks = load_attacks(level)
     validate_config = ValidateConfig(runtime=vf.DockerConfig(allow=[], memory=4.0))
     network_probe = await verify_agent_network_policy()
     rows = []
     for attack in attacks:
         for seed in attack["seeds"]:
-            rows.append(await run_case(attack, seed, validate_config))
+            rows.append(await run_case(attack, seed, level, validate_config))
 
     headers = (
         "attacker",
@@ -304,4 +332,7 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--level", type=int, choices=(1, 2), default=1)
+    args = parser.parse_args()
+    raise SystemExit(asyncio.run(main(args.level)))

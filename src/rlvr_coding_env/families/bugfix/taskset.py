@@ -6,7 +6,7 @@ import asyncio
 import json
 import secrets
 from importlib.resources import files
-from typing import Any
+from typing import Any, Literal
 
 import verifiers.v1 as vf
 from pydantic import Field
@@ -22,12 +22,13 @@ MAX_RESULT_BYTES = 1_000_000
 
 class BugfixData(vf.TaskData):
     seed: int
-    template_id: str
-    mutation_id: str
-    target_function: str
+    level: Literal[1, 2]
+    template_ids: list[str]
+    mutation_ids: list[str]
+    target_functions: list[str]
     files: dict[str, str]
     protected_hashes: dict[str, str]
-    hidden_inputs: list[list[object]]
+    hidden_cases: list[list[object]]
     reference_source: str
 
 
@@ -45,8 +46,7 @@ class BugfixTask(vf.Task[BugfixData]):
         nonce = secrets.token_urlsafe(32)
         cases = {
             "nonce": nonce,
-            "target_function": self.data.target_function,
-            "inputs": self.data.hidden_inputs,
+            "cases": self.data.hidden_cases,
         }
         self._grading_nonce = nonce
         await runtime.write(f"{GRADER_ROOT}/runner.py", runner)
@@ -139,7 +139,7 @@ class BugfixTask(vf.Task[BugfixData]):
                             isinstance(payload, dict)
                             and payload.get("nonce") == self._grading_nonce
                             and isinstance(payload.get("outputs"), list)
-                            and len(payload["outputs"]) == len(self.data.hidden_inputs)
+                            and len(payload["outputs"]) == len(self.data.hidden_cases)
                         ):
                             result["runner_completed"] = hidden_run.exit_code == 0
                             if result["runner_completed"]:
@@ -152,10 +152,9 @@ class BugfixTask(vf.Task[BugfixData]):
                                     ),
                                     namespace,
                                 )
-                                reference = namespace[self.data.target_function]
                                 expected = []
-                                for args in self.data.hidden_inputs:
-                                    value = reference(*args)
+                                for function_name, args in self.data.hidden_cases:
+                                    value = namespace[function_name](*args)
                                     json.dumps(value, allow_nan=False)
                                     expected.append({"ok": True, "value": value})
                                 outputs = payload["outputs"]
@@ -224,6 +223,7 @@ class BugfixTask(vf.Task[BugfixData]):
 class BugfixTasksetConfig(vf.TasksetConfig):
     num_tasks: int = Field(20, ge=1)
     seed_offset: int = 0
+    level: Literal[1, 2] = 1
 
 
 class BugfixTaskset(vf.Taskset[BugfixTask, BugfixTasksetConfig]):
@@ -233,25 +233,45 @@ class BugfixTaskset(vf.Taskset[BugfixTask, BugfixTasksetConfig]):
             self.config.seed_offset,
             self.config.seed_offset + self.config.num_tasks,
         ):
-            instance = generate(seed)
-            data = BugfixData(
-                id=f"bugfix-{seed}",
-                prompt=(
-                    f"Issue: Fix `{instance.target_function}` in `lib.py`. "
-                    f"{instance.spec}\n\n"
+            instance = generate(seed, self.config.level)
+            if instance.level == 1:
+                prompt = (
+                    f"Issue: Fix `{instance.target_functions[0]}` in `lib.py`. "
+                    f"{instance.specs[0]}\n\n"
                     f"The visible test `{instance.visible_cases[0]['name']}` currently "
                     "fails. Fix the implementation so it matches the specification "
                     "and passes the visible test and the full hidden test suite.\n\n"
                     f"The repository is at {REPO_ROOT}. Only edit `lib.py`; do not "
                     "modify the tests or any other files."
-                ),
+                )
+                task_id = f"bugfix-{seed}"
+            else:
+                first_function, second_function = instance.target_functions
+                first_spec, second_spec = instance.specs
+                prompt = (
+                    "Issue: Users report that functions in `lib.py` do not always "
+                    "follow their specifications:\n"
+                    f"- `{first_function}`: {first_spec}\n"
+                    f"- `{second_function}`: {second_spec}\n\n"
+                    "The visible tests in `tests/test_visible.py` pass, but they do "
+                    "not cover the reported failures. Find and fix every bug so each "
+                    "function matches its specification on all inputs; a hidden test "
+                    "suite checks both functions.\n\n"
+                    f"The repository is at {REPO_ROOT}. Only edit `lib.py`; do not "
+                    "modify the tests or any other files."
+                )
+                task_id = f"bugfix-l2-{seed}"
+            data = BugfixData(
+                id=task_id,
+                prompt=prompt,
                 seed=instance.seed,
-                template_id=instance.template_id,
-                mutation_id=instance.mutation_id,
-                target_function=instance.target_function,
+                level=instance.level,
+                template_ids=instance.template_ids,
+                mutation_ids=instance.mutation_ids,
+                target_functions=instance.target_functions,
                 files=instance.files,
                 protected_hashes=instance.protected_hashes,
-                hidden_inputs=instance.hidden_inputs,
+                hidden_cases=instance.hidden_cases,
                 reference_source=instance.reference_source,
                 image="python:3.11-slim",
                 workdir=REPO_ROOT,
