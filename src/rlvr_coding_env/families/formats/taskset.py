@@ -230,7 +230,8 @@ class FormatsTaskset(vf.Taskset[FormatsTask, FormatsTasksetConfig]):
                 f"Write {REPO_ROOT}/parser.py defining "
                 "`parse(data: bytes) -> dict | None` to match the reader, including "
                 "rejecting invalid files. A hidden test suite checks many valid and "
-                "malformed files. Only edit `parser.py`; do not modify any other files."
+                "malformed files. Only edit `parser.py`; do not modify or delete the "
+                "provided files. Scratch files are allowed but are deleted before grading."
             )
             data = FormatsData(
                 id=f"formats-l{instance.level}-{seed}",

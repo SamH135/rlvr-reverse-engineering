@@ -47,11 +47,11 @@ flowchart TD
     L -->|no| N["Reward = 0.0"]
 ```
 
-For the reverse-engineering families, the common scope check verifies the expected
-repository contents, protected hashes, symlink absence, and the 16 KiB deliverable
-limit; it then removes repository files other than the deliverable. The shared runner
-installs its audit hook before importing candidate code. Bugfix uses its own protected
-file/scope checks and visible/hidden test flow rather than that cleanup and hook.
+For the reverse-engineering families, the common scope check requires the expected
+files, matching protected hashes, no symlinks or non-regular files, and a 16 KiB
+deliverable limit. Extra regular files are allowed at scope check but removed before
+the shared runner imports candidate code. Bugfix uses its own stricter file-set and
+scope checks and visible/hidden test flow rather than that cleanup and audit hook.
 
 ## Security model: why this is hard to cheat
 
@@ -61,9 +61,9 @@ suite is targeted evidence, not a proof of security.
 | Family | QC coverage | Attacks exercised and defenses |
 | --- | --- | --- |
 | **bugfix** | 26 expected checks per run at L1 and L2 | Forged results and visible-test edits are checked against protected files and host-computed hidden truth. Exact file/symlink checks, timeouts, and malformed/import failure handling cover scope and execution attacks. |
-| **keygen** | 52 checks across L0/L3 and two seeds | Checker-oracle and embedded-checker attacks meet cleanup before grading and the shared audit hook. Exact scope, protected hashes, host-side truth, nonce-bound results, type checks, and timeout handling cover other attacks. |
-| **decompile** | 64 checks across L0/L3 and two seeds | Includes binary wrapping, ctypes/mmap execution, and hook-rewrite attacks. The shared audit hook denies native execution paths; host truth, scope checks, and timeouts address the other attacks. |
-| **formats** | 60 checks across L0/L3 and two seeds | Includes reader-oracle, embedded-reader, native-execution, sample-hardcoding, and valid-only attacks. Hidden valid and invalid files, strict JSON return validation, host truth, scope checks, and binary reward defeat these shortcuts. |
+| **keygen** | 56 checks across L0/L3 and two seeds | Checker-oracle and embedded-checker attacks meet cleanup before grading and the shared audit hook. Required-file checks, protected hashes, host-side truth, nonce-bound results, type checks, and timeout handling cover other attacks. |
+| **decompile** | 68 checks across L0/L3 and two seeds | Includes binary wrapping, ctypes/mmap execution, and hook-rewrite attacks. The shared audit hook denies native execution paths; host truth, required-file checks, and timeouts address the other attacks. |
+| **formats** | 64 checks across L0/L3 and two seeds | Includes reader-oracle, embedded-reader, native-execution, sample-hardcoding, and valid-only attacks. Hidden valid and invalid files, strict JSON return validation, host truth, required-file checks, and binary reward defeat these shortcuts. |
 
 The shared runner rejects subprocess/process creation, ctypes and mmap execution paths,
 `/proc` opens, and attempts to rewrite the audit hook. It treats exceptions and invalid

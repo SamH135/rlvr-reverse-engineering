@@ -1,15 +1,82 @@
+import hashlib
+import json
+import os
 import random
 import re
 import shutil
 import string
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
 from rlvr_coding_env.families.keygen.generator import generate
 
 NAME_CHARS = string.ascii_letters + string.digits
+COMMON_RUNNER = (
+    Path(__file__).resolve().parents[1]
+    / "src/rlvr_coding_env/families/common/runner.py"
+)
+
+
+def _scope_result(
+    tmp_path: Path,
+    *,
+    extra_file: bool = False,
+    modified_protected_file: bool = False,
+    symlink: bool = False,
+) -> tuple[bool, Path]:
+    repo = tmp_path / "repo"
+    grader = tmp_path / "grader"
+    repo.mkdir(parents=True)
+    grader.mkdir()
+
+    checker = b"trusted checker\n"
+    (repo / "keygen.py").write_text("def keygen(name): return 'OK'\n")
+    (repo / "check.py").write_bytes(
+        checker + b"modified\n" if modified_protected_file else checker
+    )
+    if extra_file or symlink:
+        (repo / "notes").mkdir()
+    if extra_file:
+        (repo / "scratch.py").write_text("# scratch\n")
+        (repo / "notes" / "scratch.txt").write_text("notes\n")
+    if symlink:
+        (repo / "notes" / "link").symlink_to("../check.py")
+
+    protected_path = grader / "protected.json"
+    protected_path.write_text(
+        json.dumps(
+            {
+                "deliverable": "keygen.py",
+                "expected_files": ["check.py"],
+                "hashes": {"check.py": hashlib.sha256(checker).hexdigest()},
+            }
+        )
+    )
+    result = subprocess.run(
+        [sys.executable, str(COMMON_RUNNER), "--scope", str(protected_path)],
+        capture_output=True,
+        check=True,
+        text=True,
+        env={**os.environ, "RLVR_REPO_ROOT": str(repo)},
+    )
+    return json.loads(result.stdout)["scope_ok"], repo
+
+
+def test_common_scope_allows_and_cleans_extras_but_rejects_changes_and_symlinks(
+    tmp_path: Path,
+):
+    scope_ok, repo = _scope_result(tmp_path / "extra", extra_file=True)
+    assert scope_ok
+    assert sorted(path.name for path in repo.iterdir()) == ["keygen.py"]
+
+    scope_ok, _ = _scope_result(tmp_path / "modified", modified_protected_file=True)
+    assert not scope_ok
+
+    scope_ok, _ = _scope_result(tmp_path / "symlink", symlink=True)
+    assert not scope_ok
 
 
 def _namespace(source: str) -> dict[str, object]:

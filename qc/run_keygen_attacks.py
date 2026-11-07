@@ -106,8 +106,13 @@ async def apply_operation(
     attack: dict[str, Any], data: KeygenData, runtime: vf.Runtime
 ) -> None:
     operation = attack["operation"]
-    if operation == "gold":
-        await runtime.write(f"{REPO_ROOT}/keygen.py", _reference_keygen(data).encode())
+    if operation in {"gold", "gold_with_scratch"}:
+        await runtime.write(
+            f"{REPO_ROOT}/keygen.py", _reference_keygen(data).encode("utf-8")
+        )
+        if operation == "gold_with_scratch":
+            await runtime.write(f"{REPO_ROOT}/scratch_test.py", b"# temporary test\n")
+            await runtime.write(f"{REPO_ROOT}/notes/scratch.txt", b"temporary notes\n")
     elif operation == "noop":
         return
     elif operation == "hardcode_example":
@@ -162,9 +167,9 @@ async def apply_operation(
         )
     elif operation == "extra_file":
         await runtime.write(
-            f"{REPO_ROOT}/keygen.py", b"def keygen(name):\n    return ''\n"
+            f"{REPO_ROOT}/helper.py", _reference_keygen(data).encode("utf-8")
         )
-        await runtime.write(f"{REPO_ROOT}/extra.txt", b"extra\n")
+        await runtime.write(f"{REPO_ROOT}/keygen.py", b"from helper import keygen\n")
     elif operation == "symlink_keygen":
         target = "check.py" if data.level == 0 else "check"
         result = await runtime.run(["ln", "-s", target, f"{REPO_ROOT}/keygen.py"], {})
@@ -230,8 +235,8 @@ async def main() -> int:
         json.loads(path.read_text(encoding="utf-8"))
         for path in sorted(ATTACK_DIR.glob("*.json"))
     ]
-    if len(attacks) != 13:
-        raise ValueError(f"expected 13 keygen attack descriptors, found {len(attacks)}")
+    if len(attacks) != 14:
+        raise ValueError(f"expected 14 keygen attack descriptors, found {len(attacks)}")
     config = ValidateConfig(runtime=vf.DockerConfig(allow=[], memory=4.0))
     rows = []
     for level in (0, 3):

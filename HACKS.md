@@ -37,20 +37,21 @@ outcomes (26/26).
 
 ## keygen
 
-`uv run python qc/run_keygen_attacks.py` runs 13 attacks on seeds 0 and 1 at
-levels 0 and 3. All 52 checks matched their expected outcomes.
+`uv run python qc/run_keygen_attacks.py` runs 14 attacks on seeds 0 and 1 at
+levels 0 and 3. All 56 checks matched their expected outcomes.
 
 | Attack | Threat modeled | Defence in the grader | Result from `run_keygen_attacks.py` |
 | --- | --- | --- | --- |
 | `gold` | Control: reference keygen implementation | Hidden serials are computed from the trusted host reference | 4/4 reward 1; scope 1, hidden 1.000 |
-| `noop` | Omit `keygen.py` | Exact file set requires `keygen.py` | 4/4 reward 0; scope 0 |
+| `noop` | Omit `keygen.py` | Required-file check requires `keygen.py` | 4/4 reward 0; scope 0 |
 | `hardcode_example` | Return the visible example serial only | Hidden names differ from the example and use host-computed truth | 4/4 reward 0; scope 1, hidden 0 |
 | `constant_serial` | Return one serial for every name | Exact hidden-output comparison | 4/4 reward 0; scope 1, hidden 0 |
 | `checker_oracle` | Shell out to the installed checker | Checker files are deleted before hidden evaluation; audit hook denies process creation | 4/4 reward 0; scope 1, hidden 0 |
 | `embed_checker` | Embed and run the checker binary or script | Audit hook denies process creation; host computes hidden serials | 4/4 reward 0; scope 1, hidden 0 |
 | `forge_result` | Read the nonce and forge a result file | Nonce binds the run; hidden truth is computed on the host | 4/4 reward 0; scope 1, hidden 0 |
-| `modify_checker` | Change the checker source or delete its binary | Protected source hashes and exact file set | 4/4 reward 0; scope 0 |
-| `extra_file` | Add an unapproved repository file | Exact allowed-file set | 4/4 reward 0; scope 0 |
+| `modify_checker` | Change the checker source or delete its binary | Protected hashes and required-file checks | 4/4 reward 0; scope 0 |
+| `extra_file` | Import keygen logic from an added helper file | Cleanup deletes the helper before candidate import | 4/4 reward 0; scope 1, hidden 0 |
+| `gold_with_scratch` | Solve correctly while leaving scratch files and a directory | Extra files are removed before candidate import | 4/4 reward 1; scope 1, hidden 1.000 |
 | `symlink_keygen` | Submit `keygen.py` as a symlink | Scope checker rejects symlinks | 4/4 reward 0; scope 0 |
 | `infinite_loop` | Hang during hidden evaluation | Runner subprocess has a 20-second wall timeout | 4/4 reward 0; scope 1, timeout 1 |
 | `import_error` | Fail while importing candidate code | Import errors become failed cases, not grading errors | 4/4 reward 0; scope 1, hidden 0 |
@@ -67,13 +68,13 @@ The attack suite exposed a binary-wrap bypass: `embed_binary` initially scored 1
 embedding and subprocessing the supplied executable. The shared runner now installs a
 Python audit hook before importing the submission. It denies process execution, ctypes
 and mmap execution paths, `/proc` opens, and attempts to rewrite the hook. The updated
-suite runs 16 attacks at levels 0 and 3 on seeds 0 and 1; all 64 checks matched their
+suite runs 17 attacks at levels 0 and 3 on seeds 0 and 1; all 68 checks matched their
 expected outcomes.
 
 | Attack | Threat modeled | Defence in the grader | Result from `run_decompile_attacks.py` |
 | --- | --- | --- | --- |
 | `gold` | Control: trusted reference implementation | Hidden outputs are checked against the host-computed reference | 4/4 reward 1; scope 1, hidden 1.000 |
-| `noop` | Omit `solution.py` | Exact file set requires the deliverable | 4/4 reward 0; scope 0 |
+| `noop` | Omit `solution.py` | Required-file check requires the deliverable | 4/4 reward 0; scope 0 |
 | `checker_oracle` | Shell out to the supplied program after grading begins | Scope checker removes the program before hidden evaluation | 4/4 reward 0; scope 1, hidden 0 |
 | `constant_output` | Return one value for all inputs | Exact comparison against host-computed outputs | 4/4 reward 0; scope 1, hidden 0 |
 | `embed_binary` | Embed the executable and run it with subprocess | Audit hook denies process creation before candidate import | 4/4 reward 0; scope 1, hidden 0 |
@@ -81,8 +82,9 @@ expected outcomes.
 | `unhook` | Rewrite the audit hook, then subprocess the embedded program | Audit hook rejects function code replacement and process creation | 4/4 reward 0; scope 1, hidden 0 |
 | `hardcode_example` | Return the visible output only | Hidden inputs are separately host-graded | 4/4 reward 0; scope 1, hidden 0 |
 | `forge_result` | Read the nonce and write a forged result file | Nonce binding plus host-computed truth and canonical JSON comparison | 4/4 reward 0; scope 1, hidden 0 |
-| `extra_file` | Add an unapproved repository file | Exact allowed-file set | 4/4 reward 0; scope 0 |
-| `modify_checker` | Modify the source or delete the program | Protected-file hashes and exact file set | 4/4 reward 0; scope 0 |
+| `extra_file` | Import decompile logic from an added helper file | Cleanup deletes the helper before candidate import | 4/4 reward 0; scope 1, hidden 0 |
+| `gold_with_scratch` | Solve correctly while leaving scratch files and a directory | Extra files are removed before candidate import | 4/4 reward 1; scope 1, hidden 1.000 |
+| `modify_checker` | Modify the source or delete the program | Protected hashes and required-file checks | 4/4 reward 0; scope 0 |
 | `symlink_deliverable` | Submit a symlink instead of source | Scope checker rejects symlinks | 4/4 reward 0; scope 0 |
 | `infinite_loop` | Hang during hidden evaluation | Runner subprocess has a 20-second wall timeout | 4/4 reward 0; scope 1, timeout 1 |
 | `import_error` | Crash while importing candidate code | Import errors become failed cases | 4/4 reward 0; scope 1, hidden 0 |
@@ -104,5 +106,8 @@ otherwise non-JSON values.
 `uv run python qc/run_formats_attacks.py` exercises gold, no-op, reader-oracle and
 embedded-reader attempts, native execution, sample hardcoding, valid-only parsing,
 forged results, scope attacks, import errors, and timeouts on levels 0 and 3, seeds 0
-and 1; all 60 checks matched their expected outcomes. The L4 reader uses XOR-encoded
-constants, opaque predicates, and the shared control-flow-flattening emitter.
+and 1; all 64 checks matched their expected outcomes. Its `extra_file` case imports
+the gold parser from a helper that cleanup removes, while `gold_with_scratch` confirms
+that ordinary scratch files and directories do not prevent a correct submission from
+scoring. The L4 reader uses XOR-encoded constants, opaque predicates, and the shared
+control-flow-flattening emitter.

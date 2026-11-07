@@ -197,8 +197,9 @@ class DecompileTaskset(vf.Taskset[DecompileTask, DecompileTasksetConfig]):
                 f"`{instance.example_output}`.\n\n"
                 f"Write {REPO_ROOT}/solution.py defining `f(xs: list[int]) -> int` "
                 "to match the program for any list of 0-12 uint32 values. A hidden "
-                "test suite checks many inputs. Do not modify or delete any existing "
-                "files."
+                "test suite checks many inputs. Only edit `solution.py`; do not "
+                "modify or delete the provided files. Scratch files are allowed but "
+                "are deleted before grading."
             )
             data = DecompileData(
                 id=f"decompile-l{instance.level}-{seed}",

@@ -83,9 +83,10 @@ def check_scope(protected_path: Path) -> dict[str, Any]:
         )
     except OSError:
         deliverable_size_ok = False
+    # Extra files are removed before the candidate is imported.
     valid = (
         not symlink_found
-        and set(actual) == expected
+        and expected <= set(actual)
         and deliverable_size_ok
         and all(actual.get(path) == digest for path, digest in hashes.items())
     )

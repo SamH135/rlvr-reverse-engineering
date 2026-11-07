@@ -110,10 +110,13 @@ async def apply_operation(
     attack: dict[str, Any], data: FormatsData, runtime: vf.Runtime
 ) -> None:
     operation = attack["operation"]
-    if operation == "gold":
+    if operation in {"gold", "gold_with_scratch"}:
         await runtime.write(
             f"{REPO_ROOT}/parser.py", _gold_source(data).encode("utf-8")
         )
+        if operation == "gold_with_scratch":
+            await runtime.write(f"{REPO_ROOT}/scratch_test.py", b"# temporary test\n")
+            await runtime.write(f"{REPO_ROOT}/notes/scratch.txt", b"temporary notes\n")
     elif operation == "noop":
         return
     elif operation == "checker_oracle":
@@ -162,9 +165,9 @@ async def apply_operation(
         )
     elif operation == "extra_file":
         await runtime.write(
-            f"{REPO_ROOT}/parser.py", b"def parse(data):\n    return None\n"
+            f"{REPO_ROOT}/helper.py", _gold_source(data).encode("utf-8")
         )
-        await runtime.write(f"{REPO_ROOT}/extra.txt", b"extra\n")
+        await runtime.write(f"{REPO_ROOT}/parser.py", b"from helper import parse\n")
     elif operation == "modify_checker":
         if data.level == 0:
             await runtime.write(
@@ -246,9 +249,9 @@ async def main() -> int:
         json.loads(path.read_text(encoding="utf-8"))
         for path in sorted(ATTACK_DIR.glob("*.json"))
     ]
-    if len(attacks) != 15:
+    if len(attacks) != 16:
         raise ValueError(
-            f"expected 15 formats attack descriptors, found {len(attacks)}"
+            f"expected 16 formats attack descriptors, found {len(attacks)}"
         )
     config = ValidateConfig(runtime=vf.DockerConfig(allow=[], memory=4.0))
     rows = []

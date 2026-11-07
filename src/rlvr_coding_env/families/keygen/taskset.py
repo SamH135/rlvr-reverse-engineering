@@ -211,8 +211,10 @@ class KeygenTaskset(vf.Taskset[KeygenTask, KeygenTasksetConfig]):
                 f"`{instance.example_serial}`.\n\n"
                 f"Write {REPO_ROOT}/keygen.py defining `keygen(name: str) -> str` that "
                 "returns a serial the checker accepts for any name of 3-16 ASCII "
-                "letters and digits. A hidden test suite checks many names. Do not "
-                "modify or delete any existing files. Available tools include "
+                "letters and digits. A hidden test suite checks many names. Only "
+                "edit `keygen.py`; do not modify or delete the provided files. "
+                "Scratch files are allowed but are deleted before grading. "
+                "Available tools include "
                 "objdump, readelf, strings, gdb and python3."
             )
             data = KeygenData(
