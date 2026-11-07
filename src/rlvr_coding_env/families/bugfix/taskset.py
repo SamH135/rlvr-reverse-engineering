@@ -13,6 +13,7 @@ from pydantic import Field
 from verifiers.v1.utils.artifacts import collect
 
 from rlvr_coding_env.families.bugfix.generator import generate
+from rlvr_coding_env.families.common import EVAL_SEED_BASE
 
 REPO_ROOT = "/app/repo"
 GRADER_ROOT = "/grader"
@@ -223,15 +224,23 @@ class BugfixTask(vf.Task[BugfixData]):
 class BugfixTasksetConfig(vf.TasksetConfig):
     num_tasks: int = Field(20, ge=1)
     seed_offset: int = 0
+    split: Literal["train", "eval"] = "train"
     level: int = Field(1, ge=1, le=2)
 
 
 class BugfixTaskset(vf.Taskset[BugfixTask, BugfixTasksetConfig]):
     def load(self) -> list[BugfixTask]:
+        if (
+            self.config.split == "train"
+            and self.config.seed_offset + self.config.num_tasks > EVAL_SEED_BASE
+        ):
+            raise ValueError("train split seed range reaches the eval range")
+        seed_base = EVAL_SEED_BASE if self.config.split == "eval" else 0
+        first_seed = seed_base + self.config.seed_offset
         tasks = []
         for seed in range(
-            self.config.seed_offset,
-            self.config.seed_offset + self.config.num_tasks,
+            first_seed,
+            first_seed + self.config.num_tasks,
         ):
             instance = generate(seed, self.config.level)
             if instance.level == 1:

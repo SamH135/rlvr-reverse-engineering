@@ -6,12 +6,13 @@ import asyncio
 import json
 import secrets
 from importlib.resources import files
-from typing import Any
+from typing import Any, Literal
 
 import verifiers.v1 as vf
 from pydantic import ConfigDict, Field
 from verifiers.v1.utils.artifacts import collect
 
+from rlvr_coding_env.families.common import EVAL_SEED_BASE
 from rlvr_coding_env.families.common.grading import grade_function
 from rlvr_coding_env.families.formats.generator import generate
 
@@ -205,15 +206,23 @@ class FormatsTask(vf.Task[FormatsData]):
 class FormatsTasksetConfig(vf.TasksetConfig):
     num_tasks: int = Field(20, ge=1)
     seed_offset: int = 0
+    split: Literal["train", "eval"] = "train"
     level: int = Field(0, ge=0, le=4)
 
 
 class FormatsTaskset(vf.Taskset[FormatsTask, FormatsTasksetConfig]):
     def load(self) -> list[FormatsTask]:
+        if (
+            self.config.split == "train"
+            and self.config.seed_offset + self.config.num_tasks > EVAL_SEED_BASE
+        ):
+            raise ValueError("train split seed range reaches the eval range")
+        seed_base = EVAL_SEED_BASE if self.config.split == "eval" else 0
+        first_seed = seed_base + self.config.seed_offset
         tasks = []
         for seed in range(
-            self.config.seed_offset,
-            self.config.seed_offset + self.config.num_tasks,
+            first_seed,
+            first_seed + self.config.num_tasks,
         ):
             instance = generate(seed, self.config.level)
             source_note = (
