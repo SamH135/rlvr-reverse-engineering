@@ -177,7 +177,7 @@ behavior—not exploits, shellcode, evasion, or packing. Use reverse-engineering
 techniques only on targets you own or are authorized to analyze. This section is not
 legal advice.
 
-Any future task family based on real enterprise code must use code the operator is
+Any task family based on real code must use code the operator is
 authorized to provide and process, with appropriate data handling and approval.
 
 ## RL glossary
@@ -198,8 +198,11 @@ authorized to provide and process, with appropriate data handling and approval.
 - Establish per-level baselines across the task families.
 - [x] Add held-out seed splits for stronger generalization measurement.
 - Run a small GRPO + LoRA experiment on a free GPU.
-- Explore a legacy business-rule family on authorized real enterprise codebases.
 - Add a true black-box level after non-root sandbox support is verified.
+
+## Design notes
+
+See [`docs/DESIGN.md`](docs/DESIGN.md) for the major design decisions and trade-offs.
 
 ## Credits and license
 
