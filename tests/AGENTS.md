@@ -6,7 +6,8 @@ per family), `test_common_runner.py` (runner audit hook, return types, hex/JSON)
 `test_determinism.py` + `test_golden.py` (generator determinism, seed-0 sha256
 goldens), `test_properties.py` (hypothesis), `test_smoke.py` (`slow`),
 `test_generator.py` (bugfix generator and runner), `test_keygen.py`,
-`test_decompile.py`, `test_formats.py`, `test_splits.py`.
+`test_decompile.py`, `test_formats.py`, `test_splits.py`,
+`test_view_transcripts.py` (HTML viewer, subprocess on a synthetic trace).
 
 ## Commands
 - Fast suite: `uv run pytest -q -m "not slow"`. Full suite (adds `slow`

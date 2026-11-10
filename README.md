@@ -134,6 +134,14 @@ uv run python qc/run_decompile_attacks.py
 uv run python qc/run_formats_attacks.py
 ```
 
+Render rollout transcripts from `outputs/*/traces.jsonl` to a single self-contained
+HTML file (sidebar of rollouts, rewards, grading info, messages and submitted
+artifacts):
+
+```bash
+uv run python tools/view_transcripts.py outputs --open
+```
+
 Example rollouts (configure the named API-key variables through your usual secret
 manager; do not put keys in the command line). Set `LITELLM_GEMINI_MODEL` to a model
 alias configured in your local LiteLLM proxy:

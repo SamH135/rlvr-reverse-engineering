@@ -12,6 +12,7 @@ Design rationale: `docs/DESIGN.md`. Threat model and attack results: `HACKS.md`.
 - Lint: `uv run ruff check .`
 - Validate one family/level: `uv run vf-validate <family> --runtime.type docker --taskset.level <n> -n 3`
 - Attack suites (Docker, minutes): `qc/run_attacks.py [--level 2]`, `qc/run_keygen_attacks.py`, `qc/run_decompile_attacks.py`, `qc/run_formats_attacks.py` (all `uv run python ...`)
+- Transcript viewer: `uv run python tools/view_transcripts.py [outputs|<run-dir>] [-o out.html] [--open]` — renders `traces.jsonl` rollouts to one self-contained HTML
 
 ## Which checks to run (keep it small; do not repeat runs)
 1. Always, fast: `ruff check` plus the pytest file for the area you touched.
@@ -25,7 +26,7 @@ If Docker is unavailable, say so in your report; do not skip silently.
 - `src/rlvr_coding_env/families/{bugfix,keygen,decompile,formats}/` generator + taskset per family
 - `src/{bugfix,keygen,decompile,formats}/` 3-line re-exports so `vf-run <name>` resolves; match `[tool.hatch]` packages in `pyproject.toml`
 - `src/fcntl.py` Windows-only shim (verifiers imports `fcntl`); POSIX uses stdlib
-- `qc/` attack suites; `baselines/` model runs; `tests/` pytest; `docker/` task image
+- `qc/` attack suites; `baselines/` model runs; `tests/` pytest; `docker/` task image; `tools/` dev utilities (transcript viewer)
 
 ## Navigation: read the local AGENTS.md before editing
 `families/common/`, `families/<family>/`, `qc/`, `baselines/`, `tests/` each have one.
