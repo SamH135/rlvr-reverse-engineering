@@ -1,5 +1,8 @@
 # RLVR Coding Environment
 
+NOTE: work in progress - building more task families and expanding/improving the existing ones
+
+
 An on-demand, seed-generated RLVR task suite for coding agents. Its main track is
 defensive reverse engineering: implement Python behavior from generated key checkers,
 compiled programs, and binary formats, each with levels L0–L4. A Python bug-fixing

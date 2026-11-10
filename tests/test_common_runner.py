@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 RUNNER = (
     Path(__file__).resolve().parents[1]
     / "src/rlvr_coding_env/families/common/runner.py"
@@ -102,3 +104,93 @@ def test_runner_hex_decoding_and_json_return_validation(tmp_path):
         arg_decode="hex",
     )
     assert rejected["outputs"] == [{"ok": False, "error": "TypeError"}]
+
+
+DENIED_SOURCES = [
+    pytest.param(
+        "import os\n"
+        "def f(xs):\n"
+        "    os.system('true')\n"
+        "    return xs[0]\n",
+        id="os.system",
+    ),
+    pytest.param(
+        "import ctypes\n"
+        "def f(xs):\n"
+        "    return xs[0]\n",
+        id="import-ctypes",
+    ),
+    pytest.param(
+        "import mmap\n"
+        "def f(xs):\n"
+        "    return xs[0]\n",
+        id="import-mmap",
+    ),
+    pytest.param(
+        "def f(xs):\n"
+        "    open('/proc/self/maps').read()\n"
+        "    return xs[0]\n",
+        id="open-proc",
+    ),
+    pytest.param(
+        "def g():\n"
+        "    return 0\n"
+        "def f(xs):\n"
+        "    g.__code__ = f.__code__\n"
+        "    return xs[0]\n",
+        id="rewrite-__code__",
+    ),
+    pytest.param(
+        "import os\n"
+        "def f(xs):\n"
+        "    os.fork()\n"
+        "    return xs[0]\n",
+        id="os.fork",
+        marks=pytest.mark.skipif(
+            not hasattr(os, "fork"), reason="os.fork is not available on Windows"
+        ),
+    ),
+    pytest.param(
+        "import os, sys\n"
+        "def f(xs):\n"
+        "    os.posix_spawn(sys.executable, [sys.executable, '-c', 'pass'], os.environ)\n"
+        "    return xs[0]\n",
+        id="os.posix_spawn",
+        marks=pytest.mark.skipif(
+            not hasattr(os, "posix_spawn"),
+            reason="os.posix_spawn is not available on Windows",
+        ),
+    ),
+]
+
+
+@pytest.mark.parametrize("source", DENIED_SOURCES)
+def test_audit_hook_denied_behaviors_fail_every_case(tmp_path, source):
+    result = _run_submission(tmp_path, source)
+    assert len(result["outputs"]) == 2
+    assert all(output["ok"] is False for output in result["outputs"])
+
+
+def test_audit_hook_control_submission_passes(tmp_path):
+    result = _run_submission(tmp_path, "def f(xs):\n    return xs[0] + 1\n")
+    assert all(output["ok"] is True for output in result["outputs"])
+
+
+@pytest.mark.parametrize(
+    ("body", "return_type", "ok"),
+    [
+        ("return True", "uint32", False),
+        ("return 4294967296", "uint32", False),
+        ("return 1.0", "uint32", False),
+        ("return 42", "uint32", True),
+        ("return 'serial'", "str", True),
+        ("return 42", "str", False),
+    ],
+)
+def test_runner_return_type_validation(tmp_path, body, return_type, ok):
+    result = _run_submission(
+        tmp_path,
+        f"def f(xs):\n    {body}\n",
+        return_type=return_type,
+    )
+    assert all(output["ok"] is ok for output in result["outputs"])

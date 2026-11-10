@@ -1,0 +1,48 @@
+{
+  "note": "Provider errors (Gemini free-tier 15 RPM 429s) excluded from success rate per docs/DESIGN.md §11. Baselines run via local LiteLLM proxy (workaround for Gemini OpenAI-endpoint streaming tool-call crash).",
+  "key_tests": {
+    "gemini": {
+      "status": "works",
+      "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "models_404": ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.5-flash"],
+      "model_used": "gemini-3.1-flash-lite",
+      "tools_nonstream": "pass",
+      "tools_stream": "pass",
+      "direct_streaming_bug": "openai SDK crashes on tool_call_delta.index=None -> HarnessError; LiteLLM proxy required"
+    },
+    "xai": {
+      "status": "failed",
+      "api_x_ai": "HTTP 400 invalid-argument (Incorrect API key)",
+      "api_groq_com": "HTTP 403 Cloudflare 1010 (inconclusive, not a Groq key shape)"
+    }
+  },
+  "baselines": [
+    {
+      "provider": "gemini",
+      "model": "gemini-3.1-flash-lite",
+      "family": "keygen",
+      "level": 0,
+      "attempted": 5,
+      "completed": 4,
+      "solved": 4,
+      "provider_errors": 1,
+      "mean_reward": 0.8,
+      "log": "baselines/logs/base_gemini_keygen_L0.log",
+      "traces": "outputs/keygen--gemini-3.1-flash-lite--bash--74b27593"
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-3.1-flash-lite",
+      "family": "decompile",
+      "level": 0,
+      "attempted": 5,
+      "completed": 2,
+      "solved": 2,
+      "provider_errors": 3,
+      "mean_reward": 0.4,
+      "log": "baselines/logs/base_gemini_decompile_L0.log",
+      "traces": "outputs/decompile--gemini-3.1-flash-lite--bash--4633aae4"
+    }
+  ],
+  "pending": "formats L0 (agent backgrounded before launch); L2 runs not attempted (free-tier 15 RPM quota makes them expensive; L0 signal already obtained)"
+}

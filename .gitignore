@@ -1,3 +1,5 @@
+.env
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -9,5 +11,13 @@ wheels/
 # Virtual environments
 .venv
 
+# Hypothesis cache
+.hypothesis/
+
 # Evaluation outputs
 outputs/
+
+# Baseline logs
+baselines/logs/
+
+.coverage

@@ -27,9 +27,22 @@ verifiers = { git = "https://github.com/PrimeIntellect-ai/verifiers", rev = "308
 
 [dependency-groups]
 dev = [
+    "hypothesis==6.170.14",
     "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
     "ruff>=0.17.3",
 ]
 
 [tool.pytest.ini_options]
-norecursedirs = ["outputs"]
+norecursedirs = [
+    "outputs",
+    "*.egg",
+    ".*",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+markers = [
+    "slow: multi-seed generation sweeps; run the full suite without -m filters",
+]

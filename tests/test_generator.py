@@ -21,6 +21,7 @@ def _result(function, args: list[object]) -> dict[str, object]:
         return {"ok": False, "error": type(error).__name__}
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("level", [1, 2])
 def test_seeded_generations_are_reproducible_and_mutation_killed(level: int):
     for seed in range(200):
