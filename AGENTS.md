@@ -36,6 +36,7 @@ If Docker is unavailable, say so in your report; do not skip silently.
 - Expected outputs come from the host-side `reference_source`; never trust more than raw outputs from the sandbox.
 - Fail closed: scope violation, exception, bad type, timeout, nonce mismatch, wrong case count all score 0.
 - `generate(seed, level)` is deterministic: only `random.Random(seed)`; never global `random`, time or `secrets` in generators.
+- Changing generated output for existing (seed, level) requires bumping GENERATOR_VERSION and a DESIGN changelog line.
 - Train seeds < `EVAL_SEED_BASE` (1,000,000); eval seeds start there.
 - Never commit secrets; `src/.env` stays gitignored.
 

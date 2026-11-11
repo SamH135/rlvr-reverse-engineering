@@ -17,8 +17,8 @@ variation is intentionally modest and is not a guarantee against memorization.
 | Family | What the agent gets | Deliverable | Level progression |
 | --- | --- | --- | --- |
 | **bugfix** | A generated Python module and visible tests | `lib.py` | L1: one buggy function and a visible failing test. L2: two buggy functions from different templates; visible tests pass, while hidden tests cover both. |
-| **keygen** | A generated license checker and one example name/serial | `keygen.py` | L0: readable Python checker. L1: C source and an `-O0` binary. L2: symbol-rich `-O0` binary only. L3: stripped `-O2` binary. L4: L3 plus XOR-encoded constants. |
-| **decompile** | A generated program that maps lists of uint32 values to a uint32 result, plus one example | `solution.py` | L0: C source and an `-O0` binary. L1: symbol-rich `-O0` binary only. L2: stripped `-O2` binary. L3: generated control-flow flattening. L4: L3 plus opaque predicates and XOR-encoded constants. |
+| **keygen** | A generated license checker and one example name/serial | `keygen.py` | L0: readable Python checker. L1: C source and an `-O0` binary. L2: symbol-rich `-O0` binary only. L3: stripped `-O2` binary. L4: L3 plus XOR-encoded constants. L5: 8 per-op `noinline` functions behind a function-pointer table. L6: op sequence compiled to bytecode run by an embedded interpreter. |
+| **decompile** | A generated program that maps lists of uint32 values to a uint32 result, plus one example | `solution.py` | L0: C source and an `-O0` binary. L1: symbol-rich `-O0` binary only. L2: stripped `-O2` binary. L3: generated control-flow flattening. L4: L3 plus opaque predicates and XOR-encoded constants. L5: 8 stages as separate `noinline` functions called through a pointer table, keeping L4 protections. L6: stages compiled to bytecode run by an embedded interpreter with per-seed opcodes. |
 | **formats** | A generated binary reader and two valid sample files | `parser.py` | L0: C source and an `-O0` reader with fixed-width little-endian fields. L1: symbol-rich `-O0` binary; adds per-field endianness and ASCII strings. L2: stripped `-O2` reader with a checksum. L3: adds ULEB128 and flag-gated optional fields. L4: rolling-XOR-obfuscated record payload plus flattened control flow and encoded constants. |
 
 All three reverse-engineering families generate 50 hidden cases per task. Formats
@@ -164,9 +164,33 @@ uv run vf-run bugfix -n 2 -r 1 -c 1 -m qwen3:1.7b \
 
 ## Baselines
 
-| Model | Family | Level | Solved/attempted | Notes |
-| --- | --- | --- | --- | --- |
-| TBD | TBD | TBD | TBD | No completed baseline results are recorded in the repository yet. |
+| Family/level | deepseek-flash (0.3) | qwen3:1.7b (0.3) |
+| --- | --- | --- |
+| keygen L0 | 10/10 | 0/5 |
+| keygen L2 | 10/10 | 0/5 |
+| keygen L4 | 10/10 | n/a |
+| keygen L5 | 10/10 | n/a |
+| keygen L6 | 10/10 | n/a |
+| decompile L0 | 10/10 | 0/5 |
+| decompile L2 | 10/10 | 0/5 |
+| decompile L4 | 10/10 | n/a |
+| decompile L5 | 10/10 | n/a |
+| decompile L6 | 10/10 | n/a |
+| formats L0 | 10/10 | 0/4 |
+| formats L2 | 10/10 | n/a |
+| formats L4 | 9/10 | n/a |
+
+deepseek-flash on generator 0.3 (N=10/cell, train seeds 0-9, max-turns 30):
+129/130 solved; the one miss was a max-turns stop on formats L4
+(`baselines/results_v0.3.json`; 0.2 results in `baselines/results_v0.2.json`).
+qwen3:1.7b via Ollama (num_ctx 16384, Q4_K_M, ~2-6 min/episode) solved 0 episodes
+across 5 cells (N=5; formats L0 partial at 4/5 recorded — one episode was killed
+at ~3h CPU wall). Its failures reached grading (scope_ok=1) with wrong outputs,
+but sampled traces show it often fails to use the `edit` tool (non-matching
+`old_str`) and rarely reads files or uses bash, so read these cells as a
+tool-use floor for a 1.7B model, not a measure of reverse-engineering ability.
+Provider/harness errors are excluded from
+solved/attempted denominators; at these N the Wilson intervals are wide.
 
 ### Evaluation protocol
 
