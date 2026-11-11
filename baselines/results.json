@@ -1,10 +1,14 @@
 {
-  "note": "Provider errors (Gemini free-tier 15 RPM 429s) excluded from success rate per docs/DESIGN.md §11. Baselines run via local LiteLLM proxy (workaround for Gemini OpenAI-endpoint streaming tool-call crash).",
+  "note": "Provider errors (Gemini free-tier 15 RPM 429s) excluded from success rate per docs/DESIGN.md section 11. Baselines run via local LiteLLM proxy (workaround for Gemini OpenAI-endpoint streaming tool-call crash).",
   "key_tests": {
     "gemini": {
       "status": "works",
       "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai",
-      "models_404": ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.5-flash"],
+      "models_404": [
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash-lite",
+        "gemini-2.5-flash"
+      ],
       "model_used": "gemini-3.1-flash-lite",
       "tools_nonstream": "pass",
       "tools_stream": "pass",
@@ -44,5 +48,6 @@
       "traces": "outputs/decompile--gemini-3.1-flash-lite--bash--4633aae4"
     }
   ],
-  "pending": "formats L0 (agent backgrounded before launch); L2 runs not attempted (free-tier 15 RPM quota makes them expensive; L0 signal already obtained)"
+  "pending": "formats L0 (agent backgrounded before launch); L2 runs not attempted (free-tier 15 RPM quota makes them expensive; L0 signal already obtained)",
+  "validity_note": "Results recorded before generator 0.2 are superseded: decompile L0-L4 instances were degenerate for 30-60% of seeds (constant functions) and keygen for up to 5%. Do not cite the 39/39 baseline; see docs/DESIGN.md changelog."
 }
