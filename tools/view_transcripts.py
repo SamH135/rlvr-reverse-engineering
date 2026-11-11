@@ -88,6 +88,8 @@ def render_message(node: dict, call: dict | None) -> str:
                          f'{render_args(fn.get("arguments"))}</div>')
     elif role == "tool":
         content = msg.get("content") or ""
+        if not isinstance(content, str):
+            content = json.dumps(content, default=str)
         first = content.split("\n", 1)[0][:120]
         parts.append(f'<details><summary>{esc(msg.get("name", "tool"))}: {esc(first)}'
                      f'{"…" if len(content) > len(first) else ""}</summary>'

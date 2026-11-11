@@ -506,7 +506,7 @@ def main() -> int:
     jobs = [
         (family, level, seed)
         for family in FAMILIES
-        for level in range(5)
+        for level in (range(7) if family != "formats" else range(5))
         for seed in [*range(100), *range(EVAL_SEED_BASE, EVAL_SEED_BASE + 20)]
     ]
     started = time.monotonic()

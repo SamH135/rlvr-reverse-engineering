@@ -438,7 +438,7 @@ def _vm_body(
     multiplier: int,
     final_b: int,
     key: int,
-) -> list[str]:
+) -> tuple[list[str], list[str]]:
     """L6: stages compiled to (opcode, XOR-encoded immediate) bytecode."""
     vm_rng = random.Random(seed ^ 0x3C6EF372)
     opcodes = dict(zip(VM_OPS, vm_rng.sample(range(1, 1024), len(VM_OPS))))
