@@ -186,7 +186,7 @@ async def apply_operation(
         await runtime.write(f"{REPO_ROOT}/solution.py", b"def f(xs):\n    return 0\n")
     elif operation == "symlink_deliverable":
         target = "prog.c" if data.level == 0 else "prog"
-        result = await runtime.run(["ln", "-s", target, f"{REPO_ROOT}/solution.py"], {})
+        result = await runtime.run(["ln", "-sf", target, f"{REPO_ROOT}/solution.py"], {})
         if result.exit_code:
             raise RuntimeError("could not create solution symlink")
     elif operation == "infinite_loop":

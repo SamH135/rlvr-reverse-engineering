@@ -183,7 +183,7 @@ async def apply_operation(
         )
     elif operation == "symlink_deliverable":
         target = "reader.c" if data.level == 0 else "reader"
-        result = await runtime.run(["ln", "-s", target, f"{REPO_ROOT}/parser.py"], {})
+        result = await runtime.run(["ln", "-sf", target, f"{REPO_ROOT}/parser.py"], {})
         if result.exit_code:
             raise RuntimeError("could not create parser symlink")
     elif operation == "infinite_loop":

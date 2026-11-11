@@ -1,4 +1,8 @@
-"""Host-side generated-program sweep and Docker validation report updater."""
+"""Host-side generated-program sweep and Docker validation report updater.
+
+Per task: structural shape checks, a degenerate-output check (constant hidden
+output fails), and C-vs-reference agreement on every case.
+"""
 
 from __future__ import annotations
 
@@ -141,6 +145,8 @@ def _check_keygen(result: TaskResult, directory: Path) -> None:
         result.disasm_lines = _disasm_lines(binary)
 
     names = [instance.example_name, *instance.hidden_names]
+    if len({reference(name) for name in instance.hidden_names}) <= 1:
+        _fail(result, "degenerate: constant serial over all hidden names")
     if instance.example_serial != reference(instance.example_name):
         _fail(result, "visible example serial differs from the trusted reference")
     for name in names:
@@ -202,6 +208,8 @@ def _check_decompile(result: TaskResult, directory: Path) -> None:
     )
     result.disasm_lines = _disasm_lines(binary)
 
+    if len({reference(xs) for xs in hidden}) <= 1:
+        _fail(result, "degenerate: constant output over all hidden inputs")
     example_output = reference(instance.example_input)
     if example_output != instance.example_output:
         _fail(result, "visible example output differs from the trusted reference")
@@ -260,6 +268,16 @@ def _check_formats(result: TaskResult, directory: Path) -> None:
     result.disasm_lines = _disasm_lines(binary)
     input_path = directory / "input.bin"
 
+    if (
+        len(
+            {
+                canonical_json(reference(data))
+                for data in hidden[: instance.valid_count]
+            }
+        )
+        <= 1
+    ):
+        _fail(result, "degenerate: constant parse output over valid hidden files")
     sample_reference = reference(instance.sample_a)
     if sample_reference is None or instance.sample_a_output != canonical_json(
         sample_reference
@@ -397,7 +415,9 @@ def _write_sweep_report(results: list[TaskResult], duration: float) -> None:
 
 def _update_docker_report(raw_results: list[list[str]]) -> int:
     expected = {
-        (family, level, "train") for family in FAMILIES for level in range(5)
+        (family, level, "train")
+        for family in FAMILIES
+        for level in (range(7) if family != "formats" else range(5))
     } | {(family, level, "eval") for family in FAMILIES for level in (0, 4)}
     parsed: dict[tuple[str, int, str], tuple[int, int, int]] = {}
     for family, raw_level, split, raw_tasks, raw_gold, raw_noop in raw_results:
@@ -426,7 +446,7 @@ def _update_docker_report(raw_results: list[list[str]]) -> int:
     ]
     all_valid = True
     for family in FAMILIES:
-        for level in range(5):
+        for level in range(7) if family != "formats" else range(5):
             for split in ("train",):
                 tasks, gold, noop = parsed[(family, level, split)]
                 lines.append(

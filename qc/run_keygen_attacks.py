@@ -172,7 +172,7 @@ async def apply_operation(
         await runtime.write(f"{REPO_ROOT}/keygen.py", b"from helper import keygen\n")
     elif operation == "symlink_keygen":
         target = "check.py" if data.level == 0 else "check"
-        result = await runtime.run(["ln", "-s", target, f"{REPO_ROOT}/keygen.py"], {})
+        result = await runtime.run(["ln", "-sf", target, f"{REPO_ROOT}/keygen.py"], {})
         if result.exit_code:
             raise RuntimeError("could not create keygen symlink")
     elif operation == "infinite_loop":
