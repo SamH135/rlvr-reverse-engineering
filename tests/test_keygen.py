@@ -89,7 +89,7 @@ def _random_name(rng: random.Random) -> str:
     return "".join(rng.choice(NAME_CHARS) for _ in range(rng.randint(3, 16)))
 
 
-@pytest.mark.parametrize("level", range(5))
+@pytest.mark.parametrize("level", range(7))
 def test_generation_is_deterministic_and_has_distinct_names(level: int):
     for seed in range(100):
         instance = generate(seed, level)
@@ -102,6 +102,8 @@ def test_generation_is_deterministic_and_has_distinct_names(level: int):
             3 <= len(name) <= 16 and name.isascii() and name.isalnum()
             for name in [instance.example_name, *instance.hidden_names]
         )
+        serial = _namespace(instance.reference_source)["serial"]
+        assert len({serial(name) for name in instance.hidden_names}) > 1
         if level == 0:
             assert set(instance.files) == {"check.py"}
             assert instance.expected_files == ["check.py"]
@@ -118,7 +120,7 @@ def test_generation_is_deterministic_and_has_distinct_names(level: int):
 
 
 @pytest.mark.skipif(shutil.which("gcc") is None, reason="host gcc is unavailable")
-@pytest.mark.parametrize("level", range(5))
+@pytest.mark.parametrize("level", range(7))
 def test_reference_matches_compiled_checker_and_level_zero_python(tmp_path, level: int):
     for seed in range(20):
         instance = generate(seed, level)
@@ -178,8 +180,9 @@ def test_reference_matches_compiled_checker_and_level_zero_python(tmp_path, leve
     shutil.which("gcc") is None or shutil.which("strings") is None,
     reason="host gcc or strings is unavailable",
 )
-def test_level_four_binary_does_not_expose_raw_constants(tmp_path):
-    instance = generate(0, 4)
+@pytest.mark.parametrize("level", [4, 5, 6])
+def test_encoded_level_binary_does_not_expose_raw_constants(tmp_path, level):
+    instance = generate(0, level)
     binary = tmp_path / "check"
     subprocess.run(
         ["gcc", "-O2", "-x", "c", "-", "-o", str(binary)],

@@ -122,6 +122,22 @@ def test_canonical_comparison_rejects_type_substitutes(
     assert result["hidden_pass_frac"] == 1.0
 
 
+def test_no_hidden_cases_scores_zero_not_divide_error(fake_runtime):
+    runtime = fake_runtime(result=_result_bytes(NONCE, _expected([7])))
+    result = _grade(runtime, _expected([7]))
+    assert result["runner_completed"] is True
+    assert result["example_ok"] == 1.0
+    assert result["hidden_pass_frac"] == 0.0
+
+
+def test_no_cases_at_all_scores_zero_not_index_error(fake_runtime):
+    runtime = fake_runtime(result=_result_bytes(NONCE, []))
+    result = _grade(runtime, [])
+    assert result["runner_completed"] is True
+    assert result["example_ok"] == 0.0
+    assert result["hidden_pass_frac"] == 0.0
+
+
 def test_include_case_passes_returns_per_case_list(fake_runtime):
     expected = _expected([1, 2, 3])
     actual = _expected([1, 2, 99])

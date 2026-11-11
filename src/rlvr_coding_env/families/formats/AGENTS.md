@@ -16,3 +16,4 @@ L0 fixed-width little-endian, `-O0`. L1 per-field endianness + ASCII strings. L2
 - Generator/reference/prompt: `uv run pytest tests/test_formats.py -q`, then once at the end `vf-validate formats` at a level you touched (L0 and L4 if unsure).
 - Taskset staging or grading: add `uv run python qc/run_formats_attacks.py` (Docker, expect 64/64).
 - gcc/strip-gated tests skip on Windows.
+- The deliverable stub parser.py is pre-created by setup(), is agent-editable and is NOT covered by protected hashes or expected files.

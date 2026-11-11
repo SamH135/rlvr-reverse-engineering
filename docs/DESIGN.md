@@ -49,10 +49,13 @@ generator that wrote the binary. The candidate's runner only reports raw outputs
 - **Detail:** results are nonce-bound and size-limited; comparison is on canonical JSON
   (sorted keys, compact separators) so `True` vs `1` and `1.0` vs `1` don't pass.
 
-## 5. Difficulty ladders (L0–L4) and a calibration family
+## 5. Difficulty ladders (L0–L4, plus keygen/decompile L5–L6) and a calibration family
 
 Each RE family climbs from source code to stripped `-O2` binaries to control-flow
 flattening, opaque predicates and encoded constants. `bugfix` is a source-level warm-up.
+Keygen and decompile add L5 (multi-`noinline`-function scale) and L6 (embedded
+bytecode VM with per-seed opcodes), motivated by SRE-Bench's finding that difficulty
+comes from program scale and protection layers rather than optimization level.
 
 - **Why:** GRPO only learns from task groups where the model sometimes succeeds
   (the learnable band). A ladder lets the same family supply signal to weak and strong
@@ -144,3 +147,15 @@ third-party closed-source software is in the reward loop.
 - Obfuscation is generator-made, not industrial-strength.
 - Network isolation is configured (`allow=[]`) and probed, not formally proven.
 - Model baselines are small because of free-tier limits.
+
+## Generator changelog
+
+- `0.1` — initial generators (keygen/decompile/formats L0–L4, bugfix L1–L2).
+- `0.2` — fixed degenerate tasks: decompile re-rolls until the reference output varies
+  over hidden inputs (30–60% of seeds at L0–L4 had generated constant, input-independent
+  functions); keygen forbids adjacent `table` ops (up to ~5% at L0/L1/L3/L4 produced
+  name-independent serials). Affected seeds produce different instances, so seed-level
+  results from `0.1` are not comparable. `0.2` also added L5/L6 to keygen and decompile.
+- `0.3` — prompts/setup now pre-create a stub deliverable; weak-model runs failed on
+  edit-tool 'file not found' (tool friction), not on RE; generated instances unchanged
+  from 0.2 (golden hashes unchanged); 0.2 deepseek baselines used the pre-stub prompt.

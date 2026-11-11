@@ -69,6 +69,10 @@ class DecompileTask(vf.Task[DecompileData]):
         removed = await runtime.run(["rm", "-rf", "/tmp/decompile-build"], {})
         if removed.exit_code:
             raise RuntimeError("could not remove temporary decompile source")
+        await runtime.write(
+            f"{REPO_ROOT}/solution.py",
+            b"def f(xs: list[int]) -> int:\n    raise NotImplementedError\n",
+        )
 
     async def stage_verifier(self, trace: vf.Trace, runtime: vf.Runtime) -> None:
         runner = (
@@ -178,7 +182,7 @@ class DecompileTasksetConfig(vf.TasksetConfig):
     num_tasks: int = Field(20, ge=1)
     seed_offset: int = 0
     split: Literal["train", "eval"] = "train"
-    level: int = Field(0, ge=0, le=4)
+    level: int = Field(0, ge=0, le=6)
 
 
 class DecompileTaskset(vf.Taskset[DecompileTask, DecompileTasksetConfig]):
@@ -204,7 +208,8 @@ class DecompileTaskset(vf.Taskset[DecompileTask, DecompileTasksetConfig]):
                 "uint32 result.\n"
                 f"Example input: `{instance.example_input}`; output: "
                 f"`{instance.example_output}`.\n\n"
-                f"Write {REPO_ROOT}/solution.py defining `f(xs: list[int]) -> int` "
+                f"Edit the stub at {REPO_ROOT}/solution.py (it already exists; you "
+                "may also overwrite it with bash) defining `f(xs: list[int]) -> int` "
                 "to match the program for any list of 0-12 uint32 values. A hidden "
                 "test suite checks many inputs. Only edit `solution.py`; do not "
                 "modify or delete the provided files. Scratch files are allowed but "

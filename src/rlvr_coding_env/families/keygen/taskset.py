@@ -40,6 +40,10 @@ class KeygenTask(vf.Task[KeygenData]):
         for path, content in self.data.files.items():
             await runtime.write(f"{REPO_ROOT}/{path}", content.encode("utf-8"))
         if self.data.level == 0:
+            await runtime.write(
+                f"{REPO_ROOT}/keygen.py",
+                b"def keygen(name: str) -> str:\n    raise NotImplementedError\n",
+            )
             return
 
         await runtime.run(["rm", "-rf", "/tmp/keygen-build"], {})
@@ -76,6 +80,10 @@ class KeygenTask(vf.Task[KeygenData]):
         removed = await runtime.run(["rm", "-rf", "/tmp/keygen-build"], {})
         if removed.exit_code:
             raise RuntimeError("could not remove temporary keygen source")
+        await runtime.write(
+            f"{REPO_ROOT}/keygen.py",
+            b"def keygen(name: str) -> str:\n    raise NotImplementedError\n",
+        )
 
     async def stage_verifier(self, trace: vf.Trace, runtime: vf.Runtime) -> None:
         runner = (
@@ -188,7 +196,7 @@ class KeygenTasksetConfig(vf.TasksetConfig):
     num_tasks: int = Field(20, ge=1)
     seed_offset: int = 0
     split: Literal["train", "eval"] = "train"
-    level: int = Field(0, ge=0, le=4)
+    level: int = Field(0, ge=0, le=6)
 
 
 class KeygenTaskset(vf.Taskset[KeygenTask, KeygenTasksetConfig]):
@@ -218,7 +226,8 @@ class KeygenTaskset(vf.Taskset[KeygenTask, KeygenTasksetConfig]):
                 f"A license checker is installed at {REPO_ROOT}/{artifact}. {how_to_run}\n"
                 f"Example: the name `{instance.example_name}` has the serial "
                 f"`{instance.example_serial}`.\n\n"
-                f"Write {REPO_ROOT}/keygen.py defining `keygen(name: str) -> str` that "
+                f"Edit the stub at {REPO_ROOT}/keygen.py (it already exists; you may "
+                "also overwrite it with bash) defining `keygen(name: str) -> str` that "
                 "returns a serial the checker accepts for any name of 3-16 ASCII "
                 "letters and digits. A hidden test suite checks many names. Only "
                 "edit `keygen.py`; do not modify or delete the provided files. "

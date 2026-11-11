@@ -37,7 +37,7 @@ def _run(binary, xs: list[int]) -> int:
     return int(result.stdout.strip())
 
 
-@pytest.mark.parametrize("level", range(5))
+@pytest.mark.parametrize("level", range(7))
 def test_generation_is_deterministic_and_has_required_hidden_shapes(level: int):
     for seed in range(20):
         instance = generate(seed, level)
@@ -57,6 +57,7 @@ def test_generation_is_deterministic_and_has_required_hidden_shapes(level: int):
             type(reference(xs)) is int and 0 <= reference(xs) <= 0xFFFFFFFF
             for xs in instance.hidden_inputs
         )
+        assert len({reference(xs) for xs in instance.hidden_inputs}) > 1
         if level == 0:
             assert set(instance.files) == {"prog.c"}
             assert instance.expected_files == ["prog.c", "prog"]
@@ -66,7 +67,7 @@ def test_generation_is_deterministic_and_has_required_hidden_shapes(level: int):
 
 
 @pytest.mark.skipif(shutil.which("gcc") is None, reason="host gcc is unavailable")
-@pytest.mark.parametrize("level", range(5))
+@pytest.mark.parametrize("level", range(7))
 def test_reference_matches_compiled_program_on_200_inputs_per_seed(
     tmp_path, level: int
 ):
@@ -109,9 +110,10 @@ def test_level_three_flattening_increases_disassembly_size(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("gcc") is None, reason="host gcc is unavailable")
-def test_level_four_binary_does_not_contain_raw_data_constants(tmp_path):
-    instance = generate(0, 4)
-    binary = tmp_path / "prog-4"
+@pytest.mark.parametrize("level", [4, 5, 6])
+def test_encoded_level_binary_does_not_contain_raw_data_constants(tmp_path, level):
+    instance = generate(0, level)
+    binary = tmp_path / f"prog-{level}"
     _compile(instance, binary, "-O2")
     program = binary.read_bytes()
     assert all(

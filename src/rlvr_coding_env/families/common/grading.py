@@ -90,9 +90,9 @@ async def grade_function(
         _canonical_json(actual) == _canonical_json(expected)
         for actual, expected in zip(actual_outputs, expected_outputs, strict=True)
     ]
-    result["example_ok"] = float(case_passes[0])
-    hidden_expected = expected_outputs[1:]
-    result["hidden_pass_frac"] = sum(case_passes[1:]) / len(hidden_expected)
+    result["example_ok"] = float(case_passes[0]) if case_passes else 0.0
+    hidden = case_passes[1:]
+    result["hidden_pass_frac"] = sum(hidden) / len(hidden) if hidden else 0.0
     if include_case_passes:
         result["case_passes"] = case_passes
     return result

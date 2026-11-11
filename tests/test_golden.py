@@ -57,8 +57,8 @@ FIELDS = {
 }
 
 GENERATORS = {
-    "keygen": (keygen_generate, [0, 4]),
-    "decompile": (decompile_generate, [0, 4]),
+    "keygen": (keygen_generate, [0, 4, 5, 6]),
+    "decompile": (decompile_generate, [0, 4, 5, 6]),
     "formats": (formats_generate, [0, 4]),
     "bugfix": (bugfix_generate, [1, 2]),
 }

@@ -72,6 +72,10 @@ class FormatsTask(vf.Task[FormatsData]):
         removed = await runtime.run(["rm", "-rf", "/tmp/formats-build"], {})
         if removed.exit_code:
             raise RuntimeError("could not remove temporary formats source")
+        await runtime.write(
+            f"{REPO_ROOT}/parser.py",
+            b"def parse(data: bytes):\n    raise NotImplementedError\n",
+        )
 
     async def stage_verifier(self, trace: vf.Trace, runtime: vf.Runtime) -> None:
         runner = (
@@ -236,7 +240,8 @@ class FormatsTaskset(vf.Taskset[FormatsTask, FormatsTasksetConfig]):
                 "JSON, or `INVALID` for malformed files. Two valid sample files are in "
                 f"`{REPO_ROOT}/samples/`.\n"
                 f"Example: `samples/a.bin` prints `{instance.sample_a_output}`.\n\n"
-                f"Write {REPO_ROOT}/parser.py defining "
+                f"Edit the stub at {REPO_ROOT}/parser.py (it already exists; you may "
+                "also overwrite it with bash) defining "
                 "`parse(data: bytes) -> dict | None` to match the reader, including "
                 "rejecting invalid files. A hidden test suite checks many valid and "
                 "malformed files. Only edit `parser.py`; do not modify or delete the "

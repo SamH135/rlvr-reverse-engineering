@@ -7,7 +7,7 @@ import random
 from dataclasses import dataclass
 
 MASK = 0xFFFFFFFF
-STAGES_PER_LEVEL = {0: 2, 1: 2, 2: 3, 3: 4, 4: 4}
+STAGES_PER_LEVEL = {0: 2, 1: 2, 2: 3, 3: 4, 4: 4, 5: 8, 6: 6}
 
 
 @dataclass(frozen=True)
@@ -291,7 +291,7 @@ def _c_source(
     final_b: int,
     key: int,
 ) -> str:
-    encoded = level == 4
+    encoded = level >= 4
     lines = [
         "#include <errno.h>",
         "#include <inttypes.h>",
@@ -301,9 +301,10 @@ def _c_source(
         "",
     ]
     if encoded:
+        lines.append(f"static volatile uint32_t decode_key = 0x{key:08X}u;")
+    if level in (4, 5):
         lines.extend(
             [
-                f"static volatile uint32_t decode_key = 0x{key:08X}u;",
                 "static int opaque_true(uint32_t value) {",
                 '    __asm__ volatile("" : "+r"(value));',
                 "    return ((value * value + value) & 1u) == 0u;",
@@ -314,6 +315,39 @@ def _c_source(
 
     def constant(value: int) -> str:
         return c_constant_expression(value, key if encoded else None)
+
+    if level == 5:
+        for index, stage in enumerate(stages):
+            body = [
+                line.replace("acc", "(*acc)")
+                for line in _stage_c(stage, index, constant)
+            ]
+            lines.append(
+                "static __attribute__((noinline)) void "
+                f"stage_{index}(uint32_t *xs, size_t *np, uint32_t *acc) {{"
+            )
+            lines.append("    size_t n = *np;")
+            if stage.kind != "fold":
+                lines.append("    (void)acc;")
+            lines.extend(_indent(body, "    "))
+            lines.extend(["    *np = n;", "}", ""])
+        names = ", ".join(f"stage_{i}" for i in range(len(stages)))
+        lines.extend(
+            [
+                (
+                    "static void (*const stages[])(uint32_t *, size_t *,"
+                    f" uint32_t *) = {{{names}}};"
+                ),
+                "",
+            ]
+        )
+
+    vm_body: list[str] = []
+    if level == 6:
+        code_decl, vm_body = _vm_body(
+            seed, stages, final_a, multiplier, final_b, key
+        )
+        lines.extend(code_decl)
 
     lines.extend(
         [
@@ -351,14 +385,26 @@ def _c_source(
             lines.extend(_indent(_stage_c(stage, index, constant), "        "))
             lines.append("    }")
         lines.extend(_indent(final_code(), "    "))
+    elif level == 6:
+        lines.extend(vm_body)
     else:
+        if level == 5:
+            blocks = [
+                [
+                    f"for (size_t k = 0; k < {len(stages)}u; k++) {{",
+                    "    stages[k](xs, &n, &acc);",
+                    "}",
+                ]
+            ]
+        else:
+            blocks = [
+                _stage_c(stage, index, constant)
+                for index, stage in enumerate(stages)
+            ]
         lines.extend(
             emit_c_dispatcher(
                 seed,
-                [
-                    _stage_c(stage, index, constant)
-                    for index, stage in enumerate(stages)
-                ],
+                blocks,
                 final_code(),
                 opaque=encoded,
                 opaque_expression="acc ^ (n == 0 ? 0u : xs[0])",
@@ -366,6 +412,123 @@ def _c_source(
         )
     lines.extend(["}", ""])
     return "\n".join(lines)
+
+
+VM_OPS = (
+    "map_add",
+    "map_xor",
+    "map_mul",
+    "map_rotl",
+    "filter_zero_mask",
+    "filter_less_than",
+    "filter_index_mod",
+    "fold_add",
+    "fold_xor",
+    "fold_mul_add",
+    "prev",
+    "fm_shrx",
+    "fm_mul",
+)
+
+
+def _vm_body(
+    seed: int,
+    stages: list[Stage],
+    final_a: int,
+    multiplier: int,
+    final_b: int,
+    key: int,
+) -> list[str]:
+    """L6: stages compiled to (opcode, XOR-encoded immediate) bytecode."""
+    vm_rng = random.Random(seed ^ 0x3C6EF372)
+    opcodes = dict(zip(VM_OPS, vm_rng.sample(range(1, 1024), len(VM_OPS))))
+
+    def op_name(stage: Stage) -> str:
+        return "prev" if stage.kind == "prev" else f"{stage.kind}_{stage.operation}"
+
+    def immediate(stage: Stage) -> int:
+        if stage.kind in ("fold", "prev") and stage.operation != "mul_add":
+            return vm_rng.getrandbits(32)  # unused immediate: decoy
+        return stage.value
+
+    words = []
+    for stage in stages:
+        words.append(f"{opcodes[op_name(stage)]}u")
+        words.append(f"0x{immediate(stage) ^ key:08X}u")
+    for name, value in (
+        ("fm_shrx", final_a),
+        ("fm_mul", multiplier),
+        ("fm_shrx", final_b),
+    ):
+        words.append(f"{opcodes[name]}u")
+        words.append(f"0x{value ^ key:08X}u")
+
+    handlers = {
+        "map_add": ["for (size_t i = 0; i < n; i++) xs[i] += imm;"],
+        "map_xor": ["for (size_t i = 0; i < n; i++) xs[i] ^= imm;"],
+        "map_mul": ["for (size_t i = 0; i < n; i++) xs[i] *= imm;"],
+        "map_rotl": [
+            "for (size_t i = 0; i < n; i++)",
+            "    xs[i] = (xs[i] << imm) | (xs[i] >> (32u - imm));",
+        ],
+        "filter_zero_mask": [
+            "size_t output = 0;",
+            "for (size_t i = 0; i < n; i++)",
+            "    if (!((xs[i] & imm) == 0u)) xs[output++] = xs[i];",
+            "n = output;",
+        ],
+        "filter_less_than": [
+            "size_t output = 0;",
+            "for (size_t i = 0; i < n; i++)",
+            "    if (!(xs[i] < imm)) xs[output++] = xs[i];",
+            "n = output;",
+        ],
+        "filter_index_mod": [
+            "size_t output = 0;",
+            "for (size_t i = 0; i < n; i++)",
+            "    if (!(i % imm == 0u)) xs[output++] = xs[i];",
+            "n = output;",
+        ],
+        "fold_add": ["for (size_t i = 0; i < n; i++) acc += xs[i];"],
+        "fold_xor": ["for (size_t i = 0; i < n; i++) acc ^= xs[i];"],
+        "fold_mul_add": [
+            "for (size_t i = 0; i < n; i++) acc = acc * imm + xs[i];"
+        ],
+        "prev": [
+            "uint32_t previous = 0;",
+            "for (size_t i = 0; i < n; i++) {",
+            "    uint32_t current = xs[i];",
+            "    xs[i] = current ^ previous;",
+            "    previous = current;",
+            "}",
+        ],
+        "fm_shrx": ["acc ^= acc >> imm;"],
+        "fm_mul": ["acc *= imm;"],
+    }
+    lines = ["    for (size_t pc = 0; pc < sizeof(code) / sizeof(code[0]); pc += 2) {",
+             "        uint32_t imm = code[pc + 1] ^ decode_key;",
+             "        switch (code[pc]) {"]
+    used_ops = {op_name(stage) for stage in stages} | {"fm_shrx", "fm_mul"}
+    for name in VM_OPS:
+        if name not in used_ops:
+            continue
+        lines.append(f"        case {opcodes[name]}u: {{")
+        lines.extend(_indent(handlers[name], "            "))
+        lines.extend(["            break;", "        }"])
+    lines.extend(
+        [
+            "        default:",
+            "            return 1;",
+            "        }",
+            "    }",
+            '    printf("%" PRIu32 "\\n", acc);',
+            "    return 0;",
+        ]
+    )
+    return [
+        f"static const uint32_t code[] = {{{', '.join(words)}}};",
+        "",
+    ], lines
 
 
 def _random_input(rng: random.Random, length: int | None = None) -> list[int]:
@@ -384,18 +547,7 @@ def generate(seed: int, level: int) -> DecompileInstance:
     final_a = rng.randint(1, 31)
     multiplier = _word(rng) | 1
     final_b = rng.randint(1, 31)
-    key = (rng.getrandbits(32) | 1) if level == 4 else 0
-    reference_source = _reference_source(initial, stages, final_a, multiplier, final_b)
-    c_source = _c_source(
-        level,
-        seed,
-        initial,
-        stages,
-        final_a,
-        multiplier,
-        final_b,
-        key,
-    )
+    key = (rng.getrandbits(32) | 1) if level >= 4 else 0
     input_rng = random.Random(seed ^ (level * 0xBB67AE85) ^ 0x3C6EF372)
     example_input = _random_input(input_rng, input_rng.randint(3, 5))
     hidden_inputs = [[], _random_input(input_rng, 1), [0, MASK]]
@@ -406,9 +558,30 @@ def generate(seed: int, level: int) -> DecompileInstance:
         if tuple(xs) not in seen:
             seen.add(tuple(xs))
             hidden_inputs.append(xs)
-    namespace: dict[str, object] = {}
-    exec(compile(reference_source, "<trusted-decompile-reference>", "exec"), namespace)  # noqa: S102
-    function = namespace["f"]
+    for _ in range(64):
+        # Only "fold" stages mix xs into acc; re-roll constant programs.
+        reference_source = _reference_source(initial, stages, final_a, multiplier, final_b)
+        namespace: dict[str, object] = {}
+        exec(  # noqa: S102
+            compile(reference_source, "<trusted-decompile-reference>", "exec"),
+            namespace,
+        )
+        function = namespace["f"]
+        if len({function(xs) for xs in hidden_inputs}) > 1:
+            break
+        stages = [_stage(rng) for _ in range(STAGES_PER_LEVEL[level])]
+    else:
+        raise RuntimeError(f"could not generate an input-dependent program (seed {seed})")
+    c_source = _c_source(
+        level,
+        seed,
+        initial,
+        stages,
+        final_a,
+        multiplier,
+        final_b,
+        key,
+    )
     example_output = function(example_input)
     files = {"prog.c": c_source} if level == 0 else {}
     expected_files = ["prog.c", "prog"] if level == 0 else ["prog"]
