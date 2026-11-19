@@ -31,6 +31,7 @@ class DecompileData(vf.TaskData):
     example_input: list[int]
     example_output: int
     hidden_inputs: list[list[int]]
+    access: str = "default"
 
 
 class DecompileTask(vf.Task[DecompileData]):
@@ -45,16 +46,16 @@ class DecompileTask(vf.Task[DecompileData]):
             "/tmp/decompile-build/prog.c", self.data.c_source.encode("utf-8")
         )
         optimization = "-O0" if self.data.level <= 1 else "-O2"
-        compiled = await runtime.run(
-            [
-                "gcc",
-                optimization,
-                "/tmp/decompile-build/prog.c",
-                "-o",
-                "/tmp/decompile-build/prog",
-            ],
-            {},
-        )
+        gcc_command = [
+            "gcc",
+            optimization,
+            "/tmp/decompile-build/prog.c",
+            "-o",
+            "/tmp/decompile-build/prog",
+        ]
+        if self.data.access == "blackbox":
+            gcc_command.insert(1, "-static")
+        compiled = await runtime.run(gcc_command, {})
         if compiled.exit_code:
             raise RuntimeError("could not compile the decompile program")
         if self.data.level >= 2:
@@ -73,6 +74,22 @@ class DecompileTask(vf.Task[DecompileData]):
             f"{REPO_ROOT}/solution.py",
             b"def f(xs: list[int]) -> int:\n    raise NotImplementedError\n",
         )
+        if self.data.access == "blackbox":
+            hardened = await runtime.run(
+                [
+                    "sh",
+                    "-c",
+                    (
+                        "useradd -m agent 2>/dev/null; "
+                        f"chown -R agent:agent {REPO_ROOT}; "
+                        f"chown root:root {REPO_ROOT}/prog; "
+                        f"chmod 0111 {REPO_ROOT}/prog"
+                    ),
+                ],
+                {},
+            )
+            if hardened.exit_code:
+                raise RuntimeError("could not harden the decompile program")
 
     async def stage_verifier(self, trace: vf.Trace, runtime: vf.Runtime) -> None:
         runner = (
@@ -182,11 +199,19 @@ class DecompileTasksetConfig(vf.TasksetConfig):
     num_tasks: int = Field(20, ge=1)
     seed_offset: int = 0
     split: Literal["train", "eval"] = "train"
-    level: int = Field(0, ge=0, le=6)
+    level: int = Field(0, ge=0, le=8)
+    access: Literal["default", "blackbox", "static"] = "default"
 
 
 class DecompileTaskset(vf.Taskset[DecompileTask, DecompileTasksetConfig]):
     def load(self) -> list[DecompileTask]:
+        if self.config.access == "static":
+            raise ValueError(
+                "access='static' is infeasible: foreign-arch binaries still execute "
+                "under this Docker runtime's emulation, so the oracle remains"
+            )
+        if self.config.access == "blackbox" and self.config.level < 2:
+            raise ValueError("access='blackbox' requires level >= 2")
         if (
             self.config.split == "train"
             and self.config.seed_offset + self.config.num_tasks > EVAL_SEED_BASE
@@ -213,8 +238,15 @@ class DecompileTaskset(vf.Taskset[DecompileTask, DecompileTasksetConfig]):
                 "to match the program for any list of 0-12 uint32 values. A hidden "
                 "test suite checks many inputs. Only edit `solution.py`; do not "
                 "modify or delete the provided files. Scratch files are allowed but "
-                "are deleted before grading."
+                "are deleted before grading. Grading runs in a fresh sandbox where "
+                "the provided program is not present and starting subprocesses is "
+                "blocked, so the solution must be self-contained Python."
             )
+            if self.config.access == "blackbox":
+                prompt += (
+                    " The binary is execute-only: you can run it but cannot read, "
+                    "copy or disassemble it."
+                )
             data = DecompileData(
                 id=f"decompile-l{instance.level}-{seed}",
                 prompt=prompt,
@@ -228,7 +260,9 @@ class DecompileTaskset(vf.Taskset[DecompileTask, DecompileTasksetConfig]):
                 example_input=instance.example_input,
                 example_output=instance.example_output,
                 hidden_inputs=instance.hidden_inputs,
-                image="rlvr-keygen:0.1",
+                access=self.config.access,
+                image="rlvr-keygen:0.2",
+                agent_user="agent" if self.config.access == "blackbox" else None,
                 workdir=REPO_ROOT,
                 network=vf.NetworkPolicyConfig(allow=[]),
                 scoring=vf.ScoringConfig(mode="isolated"),

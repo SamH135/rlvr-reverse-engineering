@@ -25,6 +25,7 @@ from rlvr_coding_env.families.formats.generator import generate as generate_form
 from rlvr_coding_env.families.keygen.generator import generate as generate_keygen
 
 FAMILIES = ("keygen", "decompile", "formats")
+LEVELS = {"keygen": range(7), "decompile": range(9), "formats": range(5)}
 REPORT_PATH = Path(__file__).with_name("REPORT.md")
 MAX_FAILURE_DETAILS = 5
 PROCESS_TIMEOUT_SECONDS = 10
@@ -352,7 +353,7 @@ def _write_sweep_report(results: list[TaskResult], duration: float) -> None:
     rows = []
     failures = []
     for family in FAMILIES:
-        for level in range(5):
+        for level in LEVELS[family]:
             cell = [
                 result
                 for result in results
@@ -417,7 +418,7 @@ def _update_docker_report(raw_results: list[list[str]]) -> int:
     expected = {
         (family, level, "train")
         for family in FAMILIES
-        for level in (range(7) if family != "formats" else range(5))
+        for level in LEVELS[family]
     } | {(family, level, "eval") for family in FAMILIES for level in (0, 4)}
     parsed: dict[tuple[str, int, str], tuple[int, int, int]] = {}
     for family, raw_level, split, raw_tasks, raw_gold, raw_noop in raw_results:
@@ -446,7 +447,7 @@ def _update_docker_report(raw_results: list[list[str]]) -> int:
     ]
     all_valid = True
     for family in FAMILIES:
-        for level in range(7) if family != "formats" else range(5):
+        for level in LEVELS[family]:
             for split in ("train",):
                 tasks, gold, noop = parsed[(family, level, split)]
                 lines.append(
@@ -506,7 +507,7 @@ def main() -> int:
     jobs = [
         (family, level, seed)
         for family in FAMILIES
-        for level in (range(7) if family != "formats" else range(5))
+        for level in LEVELS[family]
         for seed in [*range(100), *range(EVAL_SEED_BASE, EVAL_SEED_BASE + 20)]
     ]
     started = time.monotonic()

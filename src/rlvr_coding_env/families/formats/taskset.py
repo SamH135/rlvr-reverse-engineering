@@ -33,6 +33,7 @@ class FormatsData(vf.TaskData):
     sample_a_hex: str
     hidden_files_hex: list[str]
     valid_count: int
+    access: str = "default"
 
 
 class FormatsTask(vf.Task[FormatsData]):
@@ -48,16 +49,16 @@ class FormatsTask(vf.Task[FormatsData]):
             "/tmp/formats-build/reader.c", self.data.c_source.encode("utf-8")
         )
         optimization = "-O0" if self.data.level <= 1 else "-O2"
-        compiled = await runtime.run(
-            [
-                "gcc",
-                optimization,
-                "/tmp/formats-build/reader.c",
-                "-o",
-                "/tmp/formats-build/reader",
-            ],
-            {},
-        )
+        gcc_command = [
+            "gcc",
+            optimization,
+            "/tmp/formats-build/reader.c",
+            "-o",
+            "/tmp/formats-build/reader",
+        ]
+        if self.data.access == "blackbox":
+            gcc_command.insert(1, "-static")
+        compiled = await runtime.run(gcc_command, {})
         if compiled.exit_code:
             raise RuntimeError("could not compile the formats reader")
         if self.data.level >= 2:
@@ -76,6 +77,22 @@ class FormatsTask(vf.Task[FormatsData]):
             f"{REPO_ROOT}/parser.py",
             b"def parse(data: bytes):\n    raise NotImplementedError\n",
         )
+        if self.data.access == "blackbox":
+            hardened = await runtime.run(
+                [
+                    "sh",
+                    "-c",
+                    (
+                        "useradd -m agent 2>/dev/null; "
+                        f"chown -R agent:agent {REPO_ROOT}; "
+                        f"chown root:root {REPO_ROOT}/reader; "
+                        f"chmod 0111 {REPO_ROOT}/reader"
+                    ),
+                ],
+                {},
+            )
+            if hardened.exit_code:
+                raise RuntimeError("could not harden the formats reader")
 
     async def stage_verifier(self, trace: vf.Trace, runtime: vf.Runtime) -> None:
         runner = (
@@ -212,10 +229,18 @@ class FormatsTasksetConfig(vf.TasksetConfig):
     seed_offset: int = 0
     split: Literal["train", "eval"] = "train"
     level: int = Field(0, ge=0, le=4)
+    access: Literal["default", "blackbox", "static"] = "default"
 
 
 class FormatsTaskset(vf.Taskset[FormatsTask, FormatsTasksetConfig]):
     def load(self) -> list[FormatsTask]:
+        if self.config.access == "static":
+            raise ValueError(
+                "access='static' is infeasible: foreign-arch binaries still execute "
+                "under this Docker runtime's emulation, so the oracle remains"
+            )
+        if self.config.access == "blackbox" and self.config.level < 2:
+            raise ValueError("access='blackbox' requires level >= 2")
         if (
             self.config.split == "train"
             and self.config.seed_offset + self.config.num_tasks > EVAL_SEED_BASE
@@ -245,8 +270,16 @@ class FormatsTaskset(vf.Taskset[FormatsTask, FormatsTasksetConfig]):
                 "`parse(data: bytes) -> dict | None` to match the reader, including "
                 "rejecting invalid files. A hidden test suite checks many valid and "
                 "malformed files. Only edit `parser.py`; do not modify or delete the "
-                "provided files. Scratch files are allowed but are deleted before grading."
+                "provided files. Scratch files are allowed but are deleted before "
+                "grading. Grading runs in a fresh sandbox where the provided reader "
+                "is not present and starting subprocesses is blocked, so the "
+                "solution must be self-contained Python."
             )
+            if self.config.access == "blackbox":
+                prompt += (
+                    " The binary is execute-only: you can run it but cannot read, "
+                    "copy or disassemble it."
+                )
             data = FormatsData(
                 id=f"formats-l{instance.level}-{seed}",
                 prompt=prompt,
@@ -260,7 +293,9 @@ class FormatsTaskset(vf.Taskset[FormatsTask, FormatsTasksetConfig]):
                 sample_a_hex=instance.sample_a.hex(),
                 hidden_files_hex=[data.hex() for data in instance.hidden_files],
                 valid_count=instance.valid_count,
-                image="rlvr-keygen:0.1",
+                access=self.config.access,
+                image="rlvr-keygen:0.2",
+                agent_user="agent" if self.config.access == "blackbox" else None,
                 workdir=REPO_ROOT,
                 network=vf.NetworkPolicyConfig(allow=[]),
                 scoring=vf.ScoringConfig(mode="isolated"),

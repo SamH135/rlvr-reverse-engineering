@@ -7,10 +7,11 @@ Usage:
 Counting definitions (numbers here are publishable — read before quoting):
 - episode: one line of traces.jsonl.
 - infra errors (NOT agent failures, DESIGN decision 11): stop_condition is
-  "provider_error" or "harness_error", or a recorded error has "provider" or
-  "harness" in its type. Shown split as prov_err / harness_err. A harness_error
-  can in principle reflect agent output the harness could not parse; here every
-  observed case was a provider/tooling crash after 1 step.
+  "provider_error", "harness_error" or "sandbox_error", or a recorded error has
+  "provider", "harness" or "sandbox" in its type. Shown split as prov_err /
+  harness_err (sandbox failures count under harness_err). A harness_error can in
+  principle reflect agent output the harness could not parse; observed cases
+  were a provider/tooling crash after 1 step or a dead runtime (exit 137).
 - attempted: episodes minus infra errors (the agent really ran).
 - completed: attempted episodes whose stop_condition is "agent_completed".
 - solved: rewards["solved"].score == 1.0.
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -32,7 +34,7 @@ PRICES = {  # USD per 1M tokens (input, output) — verify before publishing
     "gemini-3.1-flash-lite": (0.0, 0.0),
 }
 
-_INFRA_STOPS = {"provider_error", "harness_error"}
+_INFRA_STOPS = {"provider_error", "harness_error", "sandbox_error"}
 
 
 def _infra_kind(ep: dict, tr: dict) -> str | None:
@@ -44,6 +46,8 @@ def _infra_kind(ep: dict, tr: dict) -> str | None:
     if stop == "provider_error" or "provider" in types:
         return "provider_error"
     if stop == "harness_error" or "harness" in types:
+        return "harness_error"
+    if stop == "sandbox_error" or "sandbox" in types:
         return "harness_error"
     return None
 
@@ -128,6 +132,73 @@ def main() -> int:
         f"{totals['tok_in']:9d} {totals['tok_out']:9d}"
     )
     return 0
+
+
+_HEREDOC_RE = re.compile(r"<<-?['\"]?(\w+)['\"]?")
+_DISASM_TOOLS = {"objdump", "gdb", "readelf", "strings", "nm", "ndisasm", "r2", "radare2"}
+_ORACLE_NAMES = {"./prog", "./reader", "./check", "/app/repo/prog", "/app/repo/reader", "/app/repo/check"}
+_WRAP = {"sudo", "env", "timeout", "cd", "nohup", "command"}
+_SCRIPTED_RE = re.compile(r"(subprocess|os\.system|Popen|check_output)")
+_BINPATH_RE = re.compile(r"(\./|/app/repo/)(prog|reader|check)\b")
+
+
+def _strip_heredocs_and_quotes(text: str) -> str:
+    """Return text minus heredoc bodies and quoted-string contents."""
+    out_lines = []
+    term = None
+    for line in text.splitlines():
+        if term is not None:
+            if line.strip() == term:
+                term = None
+            continue
+        m = _HEREDOC_RE.search(line)
+        out_lines.append(_HEREDOC_RE.sub("<<", line) if m else line)
+        if m:
+            term = m.group(1)
+    head = "\n".join(out_lines)
+    # drop contents of quoted strings (keeps the quoting words themselves)
+    head = re.sub(r"'[^']*'", "''", head)
+    head = re.sub(r'"[^"]*"', '""', head)
+    return head
+
+
+def _simple_commands(head_text: str) -> list[str]:
+    parts = re.split(r";|&&|\|\||\||\n|\$\(|`|\bdo\b|\bthen\b", head_text)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _prog_name(simple: str) -> str | None:
+    words = simple.split()
+    i = 0
+    while i < len(words) and (
+        "=" in words[i] and not words[i].startswith("./")
+        or words[i] in _WRAP
+        or words[i] in {"time", "\\"}
+    ):
+        i += 1
+    return words[i] if i < len(words) else None
+
+
+def classify_command(cmd_text: str) -> dict:
+    """Classify one bash command: disasm tool? oracle exec? oracle via script?
+
+    shortcut: program names inside quoting wrappers like `bash -c "objdump ..."`
+    are not detected (quoted contents are stripped) — accepted miss.
+    """
+    head = _strip_heredocs_and_quotes(cmd_text)
+    disasm = oracle_direct = False
+    for simple in _simple_commands(head):
+        name = _prog_name(simple)
+        if name in _DISASM_TOOLS:
+            disasm = True
+        if name in _ORACLE_NAMES:
+            oracle_direct = True
+    oracle_scripted = (
+        not oracle_direct
+        and bool(_BINPATH_RE.search(cmd_text))
+        and bool(_SCRIPTED_RE.search(cmd_text))
+    )
+    return {"disasm": disasm, "oracle_direct": oracle_direct, "oracle_scripted": oracle_scripted}
 
 
 if __name__ == "__main__":

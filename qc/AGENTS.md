@@ -1,6 +1,6 @@
 # qc: adversarial grader checks
 
-Each `run_*_attacks.py` subclasses the family task, applies a JSON descriptor from `*_attackers/`, grades in Docker, and asserts `expected_reward`. Needs Docker and image `rlvr-keygen:0.1`. Threats and defenses: `../HACKS.md`.
+Each `run_*_attacks.py` subclasses the family task, applies a JSON descriptor from `*_attackers/`, grades in Docker, and asserts `expected_reward`. Needs Docker and image `rlvr-keygen:0.2`. Threats and defenses: `../HACKS.md`.
 
 | Suite | Command (`uv run python ...`) | Expected |
 | --- | --- | --- |

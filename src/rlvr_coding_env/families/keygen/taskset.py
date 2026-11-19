@@ -197,10 +197,21 @@ class KeygenTasksetConfig(vf.TasksetConfig):
     seed_offset: int = 0
     split: Literal["train", "eval"] = "train"
     level: int = Field(0, ge=0, le=6)
+    access: Literal["default", "blackbox", "static"] = "default"
 
 
 class KeygenTaskset(vf.Taskset[KeygenTask, KeygenTasksetConfig]):
     def load(self) -> list[KeygenTask]:
+        if self.config.access == "static":
+            raise ValueError(
+                "access='static' is infeasible: foreign-arch binaries still execute "
+                "under this Docker runtime's emulation, so the oracle remains"
+            )
+        if self.config.access == "blackbox":
+            raise ValueError(
+                "access='blackbox' is meaningless for keygen: the checker prints "
+                "only ACCEPTED/REJECTED, so black-box inference carries no signal"
+            )
         if (
             self.config.split == "train"
             and self.config.seed_offset + self.config.num_tasks > EVAL_SEED_BASE
@@ -232,7 +243,9 @@ class KeygenTaskset(vf.Taskset[KeygenTask, KeygenTasksetConfig]):
                 "letters and digits. A hidden test suite checks many names. Only "
                 "edit `keygen.py`; do not modify or delete the provided files. "
                 "Scratch files are allowed but are deleted before grading. "
-                "Available tools include "
+                "Grading runs in a fresh sandbox where the provided checker is not "
+                "present and starting subprocesses is blocked, so the solution "
+                "must be self-contained Python. Available tools include "
                 "objdump, readelf, strings, gdb and python3."
             )
             data = KeygenData(
@@ -248,7 +261,7 @@ class KeygenTaskset(vf.Taskset[KeygenTask, KeygenTasksetConfig]):
                 example_name=instance.example_name,
                 example_serial=instance.example_serial,
                 hidden_names=instance.hidden_names,
-                image="rlvr-keygen:0.1",
+                image="rlvr-keygen:0.2",
                 workdir=REPO_ROOT,
                 network=vf.NetworkPolicyConfig(allow=[]),
                 scoring=vf.ScoringConfig(mode="isolated"),

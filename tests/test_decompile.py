@@ -5,7 +5,10 @@ import subprocess
 
 import pytest
 
-from rlvr_coding_env.families.decompile.generator import generate
+from rlvr_coding_env.families.decompile.generator import (
+    CRYPTO_HELPERS_PY,
+    generate,
+)
 
 
 def _reference(source: str):
@@ -37,7 +40,7 @@ def _run(binary, xs: list[int]) -> int:
     return int(result.stdout.strip())
 
 
-@pytest.mark.parametrize("level", range(7))
+@pytest.mark.parametrize("level", range(9))
 def test_generation_is_deterministic_and_has_required_hidden_shapes(level: int):
     for seed in range(20):
         instance = generate(seed, level)
@@ -67,7 +70,7 @@ def test_generation_is_deterministic_and_has_required_hidden_shapes(level: int):
 
 
 @pytest.mark.skipif(shutil.which("gcc") is None, reason="host gcc is unavailable")
-@pytest.mark.parametrize("level", range(7))
+@pytest.mark.parametrize("level", range(9))
 def test_reference_matches_compiled_program_on_200_inputs_per_seed(
     tmp_path, level: int
 ):
@@ -110,7 +113,7 @@ def test_level_three_flattening_increases_disassembly_size(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("gcc") is None, reason="host gcc is unavailable")
-@pytest.mark.parametrize("level", [4, 5, 6])
+@pytest.mark.parametrize("level", [4, 5, 6, 7, 8])
 def test_encoded_level_binary_does_not_contain_raw_data_constants(tmp_path, level):
     instance = generate(0, level)
     binary = tmp_path / f"prog-{level}"
@@ -121,3 +124,59 @@ def test_encoded_level_binary_does_not_contain_raw_data_constants(tmp_path, leve
         and struct.pack(">I", value) not in program
         for value in instance.raw_constants
     )
+
+
+def test_level_seven_reuses_the_level_five_real_program():
+    for seed in range(10):
+        five = generate(seed, 5)
+        seven = generate(seed, 7)
+        assert seven.reference_source == five.reference_source
+        assert seven.example_input == five.example_input
+        assert seven.example_output == five.example_output
+        assert seven.hidden_inputs == five.hidden_inputs
+
+
+def test_level_seven_adds_executed_decoy_stages_and_strings():
+    five = generate(0, 5)
+    seven = generate(0, 7)
+    assert five.c_source.count("__attribute__((noinline))") == 8
+    assert "void decoy_" not in five.c_source
+    assert seven.c_source.count("__attribute__((noinline))") == 12
+    assert seven.c_source.count("void decoy_") == 4
+    assert "k < 12u" in seven.c_source
+    assert "static volatile uint32_t sink;" in seven.c_source
+    assert "static const char *volatile tag;" in seven.c_source
+
+
+def test_crypto_helpers_known_answer_vectors():
+    import zlib
+
+    namespace = {}
+    exec(  # noqa: S102
+        compile(CRYPTO_HELPERS_PY, "<crypto-helpers>", "exec"), namespace
+    )
+    crc_table, crc_update = namespace["crc_table"], namespace["crc_update"]
+    table = crc_table(0xEDB88320)
+    for data in (b"", b"a", b"hello world", bytes(range(256)), b"\x00" * 33):
+        assert crc_update(0xFFFFFFFF, data, table) == zlib.crc32(data) ^ 0xFFFFFFFF
+    keystream = namespace["rc4_keystream"](b"Key", 9)
+    plaintext = b"Plaintext"
+    assert (
+        bytes(a ^ b for a, b in zip(keystream, plaintext))
+        == bytes.fromhex("BBF316E8D940AF0AD3")
+    )
+
+
+def test_level_eight_reference_uses_all_crypto_stages():
+    for seed in range(20):
+        instance = generate(seed, 8)
+        source = instance.reference_source
+        assert source.count("xtea32(") >= 2  # def + call site
+        assert source.count("crc_update(") >= 2
+        assert source.count("rc4_keystream(") >= 2
+        kinds = [
+            line.strip()
+            for line in instance.c_source.splitlines()
+            if "__attribute__((noinline))" in line
+        ]
+        assert len(kinds) == 6

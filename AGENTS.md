@@ -7,7 +7,7 @@ Design rationale: `docs/DESIGN.md`. Threat model and attack results: `HACKS.md`.
 
 ## Commands
 `uv`/`python` are not on PATH on the Windows dev host: use `py -m uv ...` there, `uv ...` elsewhere.
-- Install: `uv sync`. Image (Docker running): `docker build -f docker/keygen.Dockerfile -t rlvr-keygen:0.1 .`
+- Install: `uv sync`. Image (Docker running): `docker build -f docker/keygen.Dockerfile -t rlvr-keygen:0.2 .`
 - Tests: `uv run pytest -q -m "not slow"` (fast suite; gcc/objdump/strip tests skip when absent, e.g. Windows). `uv run pytest -q` adds the `slow` marker (multi-seed sweeps). One file: `uv run pytest tests/test_x.py -q`
 - Lint: `uv run ruff check .`
 - Validate one family/level: `uv run vf-validate <family> --runtime.type docker --taskset.level <n> -n 3`

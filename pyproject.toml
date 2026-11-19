@@ -45,4 +45,5 @@ norecursedirs = [
 ]
 markers = [
     "slow: multi-seed generation sweeps; run the full suite without -m filters",
+    "docker: needs Docker; excluded from the fast job",
 ]
