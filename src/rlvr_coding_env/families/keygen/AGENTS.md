@@ -18,3 +18,4 @@ L0 readable `check.py`. L1 `check.c` + `-O0` binary. L2 `-O0` binary only. L3 st
 - Build or taskset staging (`setup`, `stage_verifier`): the above plus `uv run python qc/run_keygen_attacks.py` (Docker, expect 56/56).
 - gcc-gated tests skip on Windows; they run on Linux CI.
 - The deliverable stub keygen.py is pre-created by setup(), is agent-editable and is NOT covered by protected hashes or expected files.
+- `access='blackbox'` is rejected for keygen (ACCEPTED/REJECTED output carries no inference signal); `access='static'` is rejected everywhere (foreign-arch binaries still execute under Docker Desktop emulation).

@@ -11,7 +11,7 @@ from rlvr_coding_env.families.keygen.generator import generate as keygen_generat
 
 GENERATORS = [
     pytest.param(keygen_generate, range(7), id="keygen"),
-    pytest.param(decompile_generate, range(7), id="decompile"),
+    pytest.param(decompile_generate, range(9), id="decompile"),
     pytest.param(formats_generate, range(5), id="formats"),
     pytest.param(bugfix_generate, [1, 2], id="bugfix"),
 ]
@@ -36,7 +36,7 @@ def test_keygen_hidden_names_exclude_example():
 
 
 def test_decompile_hidden_inputs_exclude_example():
-    for level in range(7):
+    for level in range(9):
         instance = decompile_generate(0, level)
         assert len(instance.hidden_inputs) == 50
         assert instance.example_input not in instance.hidden_inputs
@@ -59,7 +59,7 @@ def _reference(source: str, function: str):
 @pytest.mark.parametrize("family", ["keygen", "decompile", "formats"])
 def test_hidden_outputs_are_not_constant(family):
     """Degenerate instances (constant outputs over all hidden cases) are bugs."""
-    levels = range(7) if family in ("keygen", "decompile") else range(5)
+    levels = {"keygen": range(7), "decompile": range(9)}.get(family, range(5))
     for level in levels:
         for seed in range(30):
             if family == "keygen":

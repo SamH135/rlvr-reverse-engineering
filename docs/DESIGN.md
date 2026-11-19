@@ -56,6 +56,15 @@ flattening, opaque predicates and encoded constants. `bugfix` is a source-level 
 Keygen and decompile add L5 (multi-`noinline`-function scale) and L6 (embedded
 bytecode VM with per-seed opcodes), motivated by SRE-Bench's finding that difficulty
 comes from program scale and protection layers rather than optimization level.
+Decompile adds L7 on top of L5: 4 extra stages that execute but cannot affect the
+output (plus decoy strings), mirroring SRE-Bench's decoy-subsystem design to break
+the "every function is load-bearing" shortcut. L8 replaces the decoys with
+per-seed semantic stages — one each of an XTEA-style keyed round function, a CRC
+and an RC4 keystream — so difficulty comes from extracting keyed algorithms, not
+just spotting dead code. Notably, decoys alone did not reduce deepseek-flash's
+solve rate (10/10 at L7 vs 10/10 at L5, +2.6 mean bash turns;
+`baselines/results_v0.3.2_l7.json`): agents proved the decoys inert from a
+never-read global, so decoys only matter when disassembly is available.
 
 - **Why:** GRPO only learns from task groups where the model sometimes succeeds
   (the learnable band). A ladder lets the same family supply signal to weak and strong
@@ -159,3 +168,14 @@ third-party closed-source software is in the reward loop.
 - `0.3` — prompts/setup now pre-create a stub deliverable; weak-model runs failed on
   edit-tool 'file not found' (tool friction), not on RE; generated instances unchanged
   from 0.2 (golden hashes unchanged); 0.2 deepseek baselines used the pre-stub prompt.
+- `0.3.1` — opt-in `access` modes: `blackbox` execute-only binary for decompile/formats
+  (oracle vs disassembly attribution); `static` rejected (Docker Desktop emulation
+  runs foreign-arch binaries). Default unchanged; generated instances unchanged.
+- `0.3.2` — decompile L7 added (L5 real program + executed-but-inert decoy stages +
+  misleading strings); existing instances unchanged.
+- `0.3.3` — decompile L8 added (per-seed XTEA-style, CRC and RC4 stages); existing
+  instances unchanged.
+- `0.3.4` — RE prompts now state that grading runs in a fresh sandbox without the
+  provided program and with subprocesses blocked (a blackbox episode otherwise
+  submitted a subprocess wrapper that scored 0 with no way to know); generated
+  instances unchanged; baselines before 0.3.4 used the old prompt.

@@ -52,7 +52,7 @@ def test_task_data_json_round_trip_preserves_binary_files():
         sample_a_hex=instance.sample_a.hex(),
         hidden_files_hex=[item.hex() for item in instance.hidden_files],
         valid_count=instance.valid_count,
-        image="rlvr-keygen:0.1",
+        image="rlvr-keygen:0.2",
         workdir="/app/repo",
         network=vf.NetworkPolicyConfig(allow=[]),
         scoring=vf.ScoringConfig(mode="isolated"),

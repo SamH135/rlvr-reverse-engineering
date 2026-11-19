@@ -7,7 +7,60 @@ import random
 from dataclasses import dataclass
 
 MASK = 0xFFFFFFFF
-STAGES_PER_LEVEL = {0: 2, 1: 2, 2: 3, 3: 4, 4: 4, 5: 8, 6: 6}
+STAGES_PER_LEVEL = {0: 2, 1: 2, 2: 3, 3: 4, 4: 4, 5: 8, 6: 6, 7: 8, 8: 6}
+CRYPTO_HELPERS_PY = '''MASK = 0xFFFFFFFF
+
+
+def xtea32(v, delta, k, rounds):
+    s = 0
+    for _ in range(rounds):
+        s = (s + delta) & MASK
+        t = ((((v << 4) & MASK) ^ (v >> 5)) + v) & MASK
+        v = (v + (t ^ ((s + k[s & 3]) & MASK))) & MASK
+    return v
+
+
+def crc_table(poly):
+    table = []
+    for i in range(256):
+        c = i
+        for _ in range(8):
+            c = (c >> 1) ^ (poly if c & 1 else 0)
+        table.append(c)
+    return table
+
+
+def crc_update(acc, data, table):
+    for b in data:
+        acc = table[(acc ^ b) & 0xFF] ^ (acc >> 8)
+    return acc
+
+
+def rc4_keystream(key, n):
+    s = list(range(256))
+    j = 0
+    for i in range(256):
+        j = (j + s[i] + key[i % len(key)]) & 0xFF
+        s[i], s[j] = s[j], s[i]
+    out = bytearray()
+    i = j = 0
+    for _ in range(n):
+        i = (i + 1) & 0xFF
+        j = (j + s[i]) & 0xFF
+        s[i], s[j] = s[j], s[i]
+        out.append(s[(s[i] + s[j]) & 0xFF])
+    return bytes(out)
+
+
+'''
+DECOY_TAGS = (
+    "crc32 table init",
+    "feistel round keys",
+    "rc4 ksa done",
+    "xtea block decrypt",
+    "checksum mismatch",
+    "license ok",
+)
 
 
 @dataclass(frozen=True)
@@ -15,6 +68,7 @@ class Stage:
     kind: str
     operation: str = ""
     value: int = 0
+    params: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -150,12 +204,35 @@ def _stage(rng: random.Random) -> Stage:
     return Stage("prev")
 
 
+def _make_stages(rng: random.Random, level: int) -> list[Stage]:
+    if level != 8:
+        return [_stage(rng) for _ in range(STAGES_PER_LEVEL[level])]
+    stages = [_stage(rng) for _ in range(3)]
+    xtea = Stage(
+        "xtea",
+        params=(
+            _word(rng) | 1,
+            _word(rng),
+            _word(rng),
+            _word(rng),
+            _word(rng),
+            rng.randint(4, 8),
+        ),
+    )
+    crc = Stage("crc", params=(_word(rng) | 1,))
+    rc4 = Stage("rc4", params=tuple(rng.getrandbits(32) for _ in range(4)))
+    stages.extend((xtea, crc, rc4))
+    rng.shuffle(stages)
+    return stages
+
+
 def _reference_source(
     initial: int,
     stages: list[Stage],
     final_a: int,
     multiplier: int,
     final_b: int,
+    level: int,
 ) -> str:
     lines = [
         "MASK = 0xFFFFFFFF",
@@ -164,7 +241,7 @@ def _reference_source(
         "    xs = list(xs)",
         f"    acc = 0x{initial:08X}",
     ]
-    for stage in stages:
+    for index, stage in enumerate(stages):
         if stage.kind == "map":
             if stage.operation == "add":
                 expression = f"(x + 0x{stage.value:08X}) & MASK"
@@ -200,6 +277,33 @@ def _reference_source(
                 lines.append("        acc ^= x")
             else:
                 lines.append(f"        acc = (acc * 0x{stage.value:08X} + x) & MASK")
+        elif stage.kind == "xtea":
+            delta, k0, k1, k2, k3, rounds = stage.params
+            lines.append(
+                f"    xs = [xtea32(x, 0x{delta:08X}, "
+                f"(0x{k0:08X}, 0x{k1:08X}, 0x{k2:08X}, 0x{k3:08X}), "
+                f"{rounds}) for x in xs]"
+            )
+        elif stage.kind == "crc":
+            lines.append(f"    table_{index} = crc_table(0x{stage.params[0]:08X})")
+            lines.append("    for x in xs:")
+            lines.append(
+                "        acc = crc_update(acc, x.to_bytes(4, 'little'), "
+                f"table_{index})"
+            )
+        elif stage.kind == "rc4":
+            words = ", ".join(f"0x{w:08X}" for w in stage.params)
+            lines.append(
+                f"    key_{index} = b''.join(w.to_bytes(4, 'little') "
+                f"for w in ({words},))"
+            )
+            lines.append(
+                f"    ks_{index} = rc4_keystream(key_{index}, 4 * len(xs))"
+            )
+            lines.append(
+                f"    xs = [x ^ int.from_bytes(ks_{index}[4 * i:4 * i + 4], "
+                "'little') for i, x in enumerate(xs)]"
+            )
         else:
             lines.extend(
                 [
@@ -220,7 +324,10 @@ def _reference_source(
             "",
         ]
     )
-    return "\n".join(lines)
+    source = "\n".join(lines)
+    if level == 8:
+        source = CRYPTO_HELPERS_PY + source
+    return source
 
 
 def _stage_c(stage: Stage, index: int, constant) -> list[str]:
@@ -258,6 +365,87 @@ def _stage_c(stage: Stage, index: int, constant) -> list[str]:
             "}",
             "n = output;",
         ]
+    if stage.kind == "xtea":
+        delta, k0, k1, k2, k3, rounds = stage.params
+        return [
+            f"uint32_t {prefix}_delta = {constant(delta)};",
+            (
+                f"uint32_t {prefix}_k[4] = {{{constant(k0)}, {constant(k1)}, "
+                f"{constant(k2)}, {constant(k3)}}};"
+            ),
+            f"uint32_t {prefix}_rounds = {constant(rounds)};",
+            "for (size_t i = 0; i < n; i++) {",
+            "    uint32_t v = xs[i];",
+            "    uint32_t s = 0;",
+            f"    for (uint32_t r = 0; r < {prefix}_rounds; r++) {{",
+            f"        s += {prefix}_delta;",
+            (
+                f"        v += ((((v << 4) ^ (v >> 5)) + v) ^ "
+                f"(s + {prefix}_k[s & 3]));"
+            ),
+            "    }",
+            "    xs[i] = v;",
+            "}",
+        ]
+    if stage.kind == "crc":
+        return [
+            f"uint32_t {prefix}_poly = {constant(stage.params[0])};",
+            f"uint32_t {prefix}_table[256];",
+            "for (int i = 0; i < 256; i++) {",
+            "    uint32_t c = (uint32_t)i;",
+            "    for (int j = 0; j < 8; j++) {",
+            f"        c = (c >> 1) ^ ((c & 1u) ? {prefix}_poly : 0u);",
+            "    }",
+            f"    {prefix}_table[i] = c;",
+            "}",
+            "for (size_t i = 0; i < n; i++) {",
+            "    uint32_t x = xs[i];",
+            "    for (int b = 0; b < 4; b++) {",
+            (
+                f"        acc = {prefix}_table[(acc ^ (x & 0xFFu)) & 0xFFu] "
+                "^ (acc >> 8);"
+            ),
+            "        x >>= 8;",
+            "    }",
+            "}",
+        ]
+    if stage.kind == "rc4":
+        words = ", ".join(constant(w) for w in stage.params)
+        return [
+            f"uint32_t {prefix}_key[4] = {{{words}}};",
+            f"uint8_t {prefix}_s[256];",
+            "for (int i = 0; i < 256; i++) {",
+            f"    {prefix}_s[i] = (uint8_t)i;",
+            "}",
+            "uint32_t j = 0;",
+            "for (int i = 0; i < 256; i++) {",
+            (
+                f"    j = (j + {prefix}_s[i] + "
+                f"(({prefix}_key[(i >> 2) & 3] >> ((i & 3) * 8)) & 0xFFu)) "
+                "& 0xFFu;"
+            ),
+            f"    uint8_t t = {prefix}_s[i];",
+            f"    {prefix}_s[i] = {prefix}_s[j];",
+            f"    {prefix}_s[j] = t;",
+            "}",
+            "uint32_t i = 0;",
+            "j = 0;",
+            "for (size_t e = 0; e < n; e++) {",
+            "    uint32_t ks = 0;",
+            "    for (int b = 0; b < 4; b++) {",
+            "        i = (i + 1) & 0xFFu;",
+            f"        j = (j + {prefix}_s[i]) & 0xFFu;",
+            f"        uint8_t t = {prefix}_s[i];",
+            f"        {prefix}_s[i] = {prefix}_s[j];",
+            f"        {prefix}_s[j] = t;",
+            (
+                f"        ks |= ((uint32_t){prefix}_s[({prefix}_s[i] + "
+                f"{prefix}_s[j]) & 0xFFu]) << (8 * b);"
+            ),
+            "    }",
+            "    xs[e] ^= ks;",
+            "}",
+        ]
     if stage.kind == "fold":
         lines = []
         if stage.operation == "mul_add":
@@ -292,6 +480,16 @@ def _c_source(
     key: int,
 ) -> str:
     encoded = level >= 4
+    emit_level = 5 if level in (7, 8) else level
+    decoys: list[Stage] = []
+    decoy_positions: set[int] = set()
+    decoy_tags: list[str] = []
+    if level == 7:
+        # Separate stream so the real program stays identical to L5 per seed.
+        decoy_rng = random.Random(seed ^ 0x1F83D9AB)
+        decoys = [_stage(decoy_rng) for _ in range(4)]
+        decoy_positions = set(decoy_rng.sample(range(12), 4))
+        decoy_tags = decoy_rng.sample(DECOY_TAGS, 3)
     lines = [
         "#include <errno.h>",
         "#include <inttypes.h>",
@@ -302,7 +500,7 @@ def _c_source(
     ]
     if encoded:
         lines.append(f"static volatile uint32_t decode_key = 0x{key:08X}u;")
-    if level in (4, 5):
+    if emit_level in (4, 5):
         lines.extend(
             [
                 "static int opaque_true(uint32_t value) {",
@@ -316,7 +514,7 @@ def _c_source(
     def constant(value: int) -> str:
         return c_constant_expression(value, key if encoded else None)
 
-    if level == 5:
+    if emit_level == 5:
         for index, stage in enumerate(stages):
             body = [
                 line.replace("acc", "(*acc)")
@@ -331,7 +529,46 @@ def _c_source(
                 lines.append("    (void)acc;")
             lines.extend(_indent(body, "    "))
             lines.extend(["    *np = n;", "}", ""])
-        names = ", ".join(f"stage_{i}" for i in range(len(stages)))
+        entry_names = [f"stage_{i}" for i in range(len(stages))]
+        if level == 7:
+            lines.extend(
+                [
+                    "static volatile uint32_t sink;",
+                    "static const char *volatile tag;",
+                    "",
+                ]
+            )
+            for decoy_index, decoy in enumerate(decoys):
+                lines.append(
+                    "static __attribute__((noinline)) void "
+                    f"decoy_{decoy_index}(uint32_t *real_xs, size_t *np, "
+                    "uint32_t *real_acc) {"
+                )
+                lines.extend(
+                    [
+                        "    size_t n = *np;",
+                        "    uint32_t acc = *real_acc;",
+                        "    uint32_t xs[12];",
+                        "    for (size_t i = 0; i < n; i++) {",
+                        "        xs[i] = real_xs[i];",
+                        "    }",
+                    ]
+                )
+                lines.extend(
+                    _indent(_stage_c(decoy, 100 + decoy_index, constant), "    ")
+                )
+                lines.extend(["    sink = acc ^ (n ? xs[0] : 0u);", "}", ""])
+            entry_names = []
+            real_index = 0
+            decoy_index = 0
+            for position in range(12):
+                if position in decoy_positions:
+                    entry_names.append(f"decoy_{decoy_index}")
+                    decoy_index += 1
+                else:
+                    entry_names.append(f"stage_{real_index}")
+                    real_index += 1
+        names = ", ".join(entry_names)
         lines.extend(
             [
                 (
@@ -366,6 +603,8 @@ def _c_source(
             f"    uint32_t acc = {constant(initial)};",
         ]
     )
+    if level == 7:
+        lines.extend(f'    tag = "{text}";' for text in decoy_tags)
 
     def final_code() -> list[str]:
         return [
@@ -388,10 +627,10 @@ def _c_source(
     elif level == 6:
         lines.extend(vm_body)
     else:
-        if level == 5:
+        if emit_level == 5:
             blocks = [
                 [
-                    f"for (size_t k = 0; k < {len(stages)}u; k++) {{",
+                    f"for (size_t k = 0; k < {len(entry_names)}u; k++) {{",
                     "    stages[k](xs, &n, &acc);",
                     "}",
                 ]
@@ -541,14 +780,16 @@ def generate(seed: int, level: int) -> DecompileInstance:
     """Generate a deterministic compiled uint32 program."""
     if level not in STAGES_PER_LEVEL:
         raise ValueError(f"unsupported decompile level: {level}")
-    rng = random.Random(seed ^ (level * 0x9E3779B9) ^ 0x243F6A88)
+    # L7 reuses the L5 real program so decoys are the only difference per seed.
+    rng_level = 5 if level == 7 else level
+    rng = random.Random(seed ^ (rng_level * 0x9E3779B9) ^ 0x243F6A88)
     initial = _word(rng)
-    stages = [_stage(rng) for _ in range(STAGES_PER_LEVEL[level])]
+    stages = _make_stages(rng, rng_level)
     final_a = rng.randint(1, 31)
     multiplier = _word(rng) | 1
     final_b = rng.randint(1, 31)
-    key = (rng.getrandbits(32) | 1) if level >= 4 else 0
-    input_rng = random.Random(seed ^ (level * 0xBB67AE85) ^ 0x3C6EF372)
+    key = (rng.getrandbits(32) | 1) if rng_level >= 4 else 0
+    input_rng = random.Random(seed ^ (rng_level * 0xBB67AE85) ^ 0x3C6EF372)
     example_input = _random_input(input_rng, input_rng.randint(3, 5))
     hidden_inputs = [[], _random_input(input_rng, 1), [0, MASK]]
     hidden_inputs.append(_random_input(input_rng, 12))
@@ -560,7 +801,9 @@ def generate(seed: int, level: int) -> DecompileInstance:
             hidden_inputs.append(xs)
     for _ in range(64):
         # Only "fold" stages mix xs into acc; re-roll constant programs.
-        reference_source = _reference_source(initial, stages, final_a, multiplier, final_b)
+        reference_source = _reference_source(
+            initial, stages, final_a, multiplier, final_b, rng_level
+        )
         namespace: dict[str, object] = {}
         exec(  # noqa: S102
             compile(reference_source, "<trusted-decompile-reference>", "exec"),
@@ -569,7 +812,7 @@ def generate(seed: int, level: int) -> DecompileInstance:
         function = namespace["f"]
         if len({function(xs) for xs in hidden_inputs}) > 1:
             break
-        stages = [_stage(rng) for _ in range(STAGES_PER_LEVEL[level])]
+        stages = _make_stages(rng, rng_level)
     else:
         raise RuntimeError(f"could not generate an input-dependent program (seed {seed})")
     c_source = _c_source(
@@ -605,6 +848,13 @@ def generate(seed: int, level: int) -> DecompileInstance:
         for stage in stages
         if stage.kind == "fold" and stage.operation == "mul_add"
     )
+    for stage in stages:
+        if stage.kind == "xtea":
+            raw_constants.extend(stage.params[:5])  # delta + key, not rounds
+        elif stage.kind == "crc":
+            raw_constants.append(stage.params[0])
+        elif stage.kind == "rc4":
+            raw_constants.extend(stage.params)
     return DecompileInstance(
         seed=seed,
         level=level,

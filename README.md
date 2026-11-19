@@ -18,11 +18,14 @@ variation is intentionally modest and is not a guarantee against memorization.
 | --- | --- | --- | --- |
 | **bugfix** | A generated Python module and visible tests | `lib.py` | L1: one buggy function and a visible failing test. L2: two buggy functions from different templates; visible tests pass, while hidden tests cover both. |
 | **keygen** | A generated license checker and one example name/serial | `keygen.py` | L0: readable Python checker. L1: C source and an `-O0` binary. L2: symbol-rich `-O0` binary only. L3: stripped `-O2` binary. L4: L3 plus XOR-encoded constants. L5: 8 per-op `noinline` functions behind a function-pointer table. L6: op sequence compiled to bytecode run by an embedded interpreter. |
-| **decompile** | A generated program that maps lists of uint32 values to a uint32 result, plus one example | `solution.py` | L0: C source and an `-O0` binary. L1: symbol-rich `-O0` binary only. L2: stripped `-O2` binary. L3: generated control-flow flattening. L4: L3 plus opaque predicates and XOR-encoded constants. L5: 8 stages as separate `noinline` functions called through a pointer table, keeping L4 protections. L6: stages compiled to bytecode run by an embedded interpreter with per-seed opcodes. |
+| **decompile** | A generated program that maps lists of uint32 values to a uint32 result, plus one example | `solution.py` | L0: C source and an `-O0` binary. L1: symbol-rich `-O0` binary only. L2: stripped `-O2` binary. L3: generated control-flow flattening. L4: L3 plus opaque predicates and XOR-encoded constants. L5: 8 stages as separate `noinline` functions called through a pointer table, keeping L4 protections. L6: stages compiled to bytecode run by an embedded interpreter with per-seed opcodes. L7: the L5 program plus 4 executed-but-inert decoy stages in a 12-entry pointer table and misleading strings. L8: L5-style pointer-table program with per-seed XTEA-style, CRC and RC4 stages. |
 | **formats** | A generated binary reader and two valid sample files | `parser.py` | L0: C source and an `-O0` reader with fixed-width little-endian fields. L1: symbol-rich `-O0` binary; adds per-field endianness and ASCII strings. L2: stripped `-O2` reader with a checksum. L3: adds ULEB128 and flag-gated optional fields. L4: rolling-XOR-obfuscated record payload plus flattened control flow and encoded constants. |
 
 All three reverse-engineering families generate 50 hidden cases per task. Formats
 uses 38 valid and 12 invalid files. Bugfix generates 50 hidden cases per function.
+Decompile L7 additionally tests decoy tolerance: a third of the binary's `noinline`
+functions execute but are inert. L8 then tests semantic difficulty: stages whose
+behaviour is a keyed cipher, checksum or stream cipher the agent must extract.
 
 ## Architecture
 
@@ -105,7 +108,7 @@ From the repository root:
 
 ```bash
 uv sync
-docker build -f docker/keygen.Dockerfile -t rlvr-keygen:0.1 .
+docker build -f docker/keygen.Dockerfile -t rlvr-keygen:0.2 .
 ```
 
 The reverse-engineering families reuse that local image; bugfix uses its Python task
@@ -162,6 +165,39 @@ uv run vf-run bugfix -n 2 -r 1 -c 1 -m qwen3:1.7b \
   --env.agent.runtime.type docker
 ```
 
+## Access modes
+
+Each RE taskset takes `--taskset.access default|blackbox|static` (opt-in; default is
+byte-identical to before):
+
+- `blackbox` (decompile/formats, level >= 2): the binary is built with `-static`,
+  owned root:root mode `0111`, and the agent runs as user `agent` — it can run the
+  target but cannot read, copy or disassemble it. Measures oracle-only solving.
+  Rejected for keygen: ACCEPTED/REJECTED output carries no inference signal.
+- `static`: rejected at load. Docker Desktop's VM-level emulation executes
+  foreign-arch binaries (verified: aarch64, riscv64, powerpc64le all run), so
+  cross-compiling does not remove the oracle.
+
+### Ablation (blackbox vs default, deepseek-flash)
+
+Same cells/seeds (N=10, train 0-9, max-turns 30; `baselines/results_v0.3_blackbox.json`):
+
+| Cell | Default solved | Blackbox solved | Median bash (def→bb) | Median oracle runs (bb) |
+| --- | --- | --- | --- | --- |
+| decompile L2 | 10/10 | 0/10 | 8.5 → 30 | 7.0 (+13 scripted) |
+| decompile L4 | 10/10 | 0/10 | 10.0 → 30 | 11.5 (+6.5 scripted) |
+| decompile L6 | 10/10 | 0/10 | 9.6 → 30 | 6.5 (+10 scripted) |
+| formats L2 | 10/10 | 5/10 | 15.6 → 30 | 2.0 (+8.5 scripted) |
+| formats L4 | 9/10 | 0/10 | 24.8 → 30 | 3.0 (+11 scripted) |
+
+With disassembly removed, deepseek-flash solved 5/50 blackbox episodes (all
+formats L2), against 49/50 in default mode on the same cells and seeds, and 48/50
+blackbox episodes ended at the 30-turn cap, so the turn budget may be a limiting
+factor (not tested with a larger cap). A static-only arm (disassembly without
+the runnable binary) could not be built, so this isolates only one of the two
+channels. Wilson intervals at N=10 are wide (e.g. formats L2 5/10: [0.24, 0.76]);
+these cells are indicative, not conclusive.
+
 ## Baselines
 
 | Family/level | deepseek-flash (0.3) | qwen3:1.7b (0.3) |
@@ -191,6 +227,8 @@ but sampled traces show it often fails to use the `edit` tool (non-matching
 tool-use floor for a 1.7B model, not a measure of reverse-engineering ability.
 Provider/harness errors are excluded from
 solved/attempted denominators; at these N the Wilson intervals are wide.
+Results recorded before generator 0.3.4 used the old prompt (the fresh-sandbox
+grading sentence was added in 0.3.4).
 
 ### Evaluation protocol
 

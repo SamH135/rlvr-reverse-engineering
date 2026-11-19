@@ -7,6 +7,10 @@ RUN apt-get update \
         binutils \
         gdb \
         file \
+        gcc-aarch64-linux-gnu \
+        libc6-dev-arm64-cross \
+        binutils-aarch64-linux-gnu \
+        binutils-multiarch \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/repo
