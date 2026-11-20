@@ -238,9 +238,11 @@ class DecompileTaskset(vf.Taskset[DecompileTask, DecompileTasksetConfig]):
                 "to match the program for any list of 0-12 uint32 values. A hidden "
                 "test suite checks many inputs. Only edit `solution.py`; do not "
                 "modify or delete the provided files. Scratch files are allowed but "
-                "are deleted before grading. Grading runs in a fresh sandbox where "
-                "the provided program is not present and starting subprocesses is "
-                "blocked, so the solution must be self-contained Python."
+                "are deleted before grading. Grading happens later, in a fresh "
+                "sandbox where the provided program is not present and starting "
+                "subprocesses is blocked, so your final solution must be "
+                "self-contained Python. While you work, you may run the provided "
+                "program and any tools freely."
             )
             if self.config.access == "blackbox":
                 prompt += (
