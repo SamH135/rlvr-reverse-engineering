@@ -121,9 +121,10 @@ def test_default_setup_unchanged():
 def test_prompt_states_fresh_sandbox_without_provided_binary(family, noun):
     task = _taskset(family, level=2).load()[0]
     assert (
-        f"Grading runs in a fresh sandbox where the provided {noun} is not "
-        "present and starting subprocesses is blocked" in task.data.prompt
+        f"Grading happens later, in a fresh sandbox where the provided {noun} "
+        "is not present and starting subprocesses is blocked" in task.data.prompt
     )
+    assert "While you work, you may run the provided" in task.data.prompt
 
 
 @pytest.mark.docker

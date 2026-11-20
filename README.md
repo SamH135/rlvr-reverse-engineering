@@ -228,7 +228,8 @@ tool-use floor for a 1.7B model, not a measure of reverse-engineering ability.
 Provider/harness errors are excluded from
 solved/attempted denominators; at these N the Wilson intervals are wide.
 Results recorded before generator 0.3.4 used the old prompt (the fresh-sandbox
-grading sentence was added in 0.3.4).
+grading sentence was added in 0.3.4); results before 0.3.5 used the 0.3.4 wording,
+which weak models read as a ban on running the provided program while working.
 
 ### Evaluation protocol
 

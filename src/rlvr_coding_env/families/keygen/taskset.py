@@ -243,9 +243,11 @@ class KeygenTaskset(vf.Taskset[KeygenTask, KeygenTasksetConfig]):
                 "letters and digits. A hidden test suite checks many names. Only "
                 "edit `keygen.py`; do not modify or delete the provided files. "
                 "Scratch files are allowed but are deleted before grading. "
-                "Grading runs in a fresh sandbox where the provided checker is not "
-                "present and starting subprocesses is blocked, so the solution "
-                "must be self-contained Python. Available tools include "
+                "Grading happens later, in a fresh sandbox where the provided "
+                "checker is not present and starting subprocesses is blocked, so "
+                "your final solution must be self-contained Python. While you "
+                "work, you may run the provided checker and any tools freely. "
+                "Available tools include "
                 "objdump, readelf, strings, gdb and python3."
             )
             data = KeygenData(

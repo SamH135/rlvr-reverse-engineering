@@ -271,9 +271,11 @@ class FormatsTaskset(vf.Taskset[FormatsTask, FormatsTasksetConfig]):
                 "rejecting invalid files. A hidden test suite checks many valid and "
                 "malformed files. Only edit `parser.py`; do not modify or delete the "
                 "provided files. Scratch files are allowed but are deleted before "
-                "grading. Grading runs in a fresh sandbox where the provided reader "
-                "is not present and starting subprocesses is blocked, so the "
-                "solution must be self-contained Python."
+                "grading. Grading happens later, in a fresh sandbox where the "
+                "provided reader is not present and starting subprocesses is "
+                "blocked, so your final solution must be self-contained Python. "
+                "While you work, you may run the provided reader and any tools "
+                "freely."
             )
             if self.config.access == "blackbox":
                 prompt += (
