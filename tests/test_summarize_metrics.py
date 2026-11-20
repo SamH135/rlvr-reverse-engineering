@@ -37,6 +37,28 @@ def test_sandbox_error_is_harness_not_attempted(tmp_path):
     assert _infra_kind(ep, ep["traces"][0]) == "harness_error"
 
 
+def test_context_overflow_is_attempted_not_infra(tmp_path):
+    msg = "upstream 400: request (20317 tokens) exceeds the available context size (8192 tokens)"
+    ep = {
+        "run": {"name": "decompile--re-tmp-a--bash--x"},
+        "task": {"data": {"id": "decompile-l0-0"}},
+        "traces": [
+            {
+                "stop_condition": "provider_error",
+                "errors": [{"type": "ProviderError", "message": msg}],
+                "rewards": {},
+            }
+        ],
+        "errors": [],
+    }
+    f = tmp_path / "traces.jsonl"
+    f.write_text(json.dumps(ep) + "\n")
+    (row,) = _rows(f)
+    assert row["ctx_overflow"] is True
+    assert row["provider_error"] is False and row["harness_error"] is False
+    assert row["solved"] is False
+
+
 def test_heredoc_strings_variable_not_disasm():
     cmd = "cd /app/repo && python3 - <<'PY'\nstrings = ['a','b']\nprint(strings)\nPY\n"
     assert classify_command(cmd)["disasm"] is False
