@@ -19,6 +19,14 @@ def clip(s):
     return s if len(s) <= CAP else s[: CAP * 2 // 3] + "\n...[truncated]...\n" + s[-CAP // 3 :]
 
 
+def _is_json(s):
+    try:
+        json.loads(s)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
 def convert(nodes):
     msgs = []
     for n in nodes:
@@ -28,7 +36,7 @@ def convert(nodes):
             out = {"role": "assistant", "content": m.get("content") or ""}
             if m.get("tool_calls"):
                 out["tool_calls"] = [
-                    {"type": "function", "function": {"name": c["name"], "arguments": json.loads(c["arguments"])}}
+                    {"type": "function", "function": {"name": c["name"], "arguments": c["arguments"] if isinstance(c["arguments"], dict) else (json.loads(c["arguments"]) if _is_json(c["arguments"]) else {"_raw": c["arguments"]})}}
                     for c in m["tool_calls"]
                 ]
             msgs.append(out)
