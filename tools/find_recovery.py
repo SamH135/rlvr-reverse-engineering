@@ -26,7 +26,8 @@ WRITE = re.compile(r"cat\s*>|str_replace|old_str|write_text|open\(")
 
 def _writes(m):
     s = json.dumps(m.get("tool_calls", ""))
-    return m["role"] == "assistant" and "solution.py" in s and bool(WRITE.search(s))
+    # deliverable is solution.py except formats, where it is parser.py
+    return m["role"] == "assistant" and re.search(r"(solution|parser)\.py", s) and bool(WRITE.search(s))
 
 
 def recovery_ok(msgs):

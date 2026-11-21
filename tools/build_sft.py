@@ -53,9 +53,10 @@ def main():
     ap.add_argument("--max-level", type=int, default=4)
     ap.add_argument("--per-task", type=int, default=1)
     ap.add_argument("--max-chars", type=int, default=16000)
+    ap.add_argument("--glob", default="outputs/*--deepseek-flash--*/traces.jsonl")
     a = ap.parse_args()
     seen, kept, stats = collections.Counter(), [], collections.Counter()
-    for p in sorted(glob.glob("outputs/*--deepseek-flash--*/traces.jsonl")):
+    for p in sorted(glob.glob(a.glob)):
         for line in Path(p).read_text(encoding="utf8").splitlines():
             try:
                 e = json.loads(line)
