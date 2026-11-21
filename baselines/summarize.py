@@ -12,6 +12,9 @@ Counting definitions (numbers here are publishable — read before quoting):
   harness_err (sandbox failures count under harness_err). A harness_error can in
   principle reflect agent output the harness could not parse; observed cases
   were a provider/tooling crash after 1 step or a dead runtime (exit 137).
+- ctx overflow: a provider 400 saying the request exceeds the context window
+  (local 8k models). Counted as attempted and not solved (the agent's own transcript
+  outgrew a fixed limit), not as an infra error; shown in its own `ctx` column.
 - attempted: episodes minus infra errors (the agent really ran).
 - completed: attempted episodes whose stop_condition is "agent_completed".
 - solved: rewards["solved"].score == 1.0.
@@ -35,9 +38,17 @@ PRICES = {  # USD per 1M tokens (input, output) — verify before publishing
 }
 
 _INFRA_STOPS = {"provider_error", "harness_error", "sandbox_error"}
+_CTX_RE = re.compile(r"exceeds the available context|maximum context length", re.IGNORECASE)
+
+
+def _is_ctx_overflow(ep: dict, tr: dict) -> bool:
+    errs = list(ep.get("errors") or []) + list(tr.get("errors") or [])
+    return any(_CTX_RE.search(str(e.get("message", ""))) for e in errs)
 
 
 def _infra_kind(ep: dict, tr: dict) -> str | None:
+    if _is_ctx_overflow(ep, tr):
+        return None
     stop = tr.get("stop_condition")
     types = " ".join(
         str(e.get("type", ""))
@@ -69,6 +80,7 @@ def _rows(path: Path) -> list[dict]:
                 "level": task_id.split("-")[1],
                 "provider_error": infra == "provider_error",
                 "harness_error": infra == "harness_error",
+                "ctx_overflow": _is_ctx_overflow(ep, tr),
                 "completed": infra is None and tr.get("stop_condition") == "agent_completed",
                 "solved": (tr.get("rewards") or {}).get("solved", {}).get("score") == 1.0,
                 "tok_in": ep.get("num_input_tokens") or 0,
@@ -92,7 +104,7 @@ def main() -> int:
 
     header = (
         f"{'group':48s} {'eps':>4s} {'solved':>6s} {'completed':>9s} {'attempted':>9s} "
-        f"{'prov':>5s} {'harn':>5s} {'tok_in':>9s} {'tok_out':>9s} {'~cost':>8s}"
+        f"{'prov':>5s} {'harn':>5s} {'ctx':>4s} {'tok_in':>9s} {'tok_out':>9s} {'~cost':>8s}"
     )
     print(header)
     print("-" * len(header))
@@ -105,6 +117,7 @@ def main() -> int:
             "completed": sum(r["completed"] for r in rows),
             "prov": sum(r["provider_error"] for r in rows),
             "harn": sum(r["harness_error"] for r in rows),
+            "ctx": sum(r["ctx_overflow"] for r in rows),
             "tok_in": sum(r["tok_in"] for r in rows),
             "tok_out": sum(r["tok_out"] for r in rows),
         }
@@ -120,7 +133,7 @@ def main() -> int:
         )
         print(
             f"{name:48s} {s['eps']:4d} {s['solved']:6d} {s['completed']:9d} "
-            f"{s['attempted']:9d} {s['prov']:5d} {s['harn']:5d} "
+            f"{s['attempted']:9d} {s['prov']:5d} {s['harn']:5d} {s['ctx']:4d} "
             f"{s['tok_in']:9d} {s['tok_out']:9d} {cost:8.3f}"
         )
         for k, v in s.items():
@@ -128,7 +141,7 @@ def main() -> int:
     print("-" * len(header))
     print(
         f"{'TOTAL':48s} {totals['eps']:4d} {totals['solved']:6d} {totals['completed']:9d} "
-        f"{totals['attempted']:9d} {totals['prov']:5d} {totals['harn']:5d} "
+        f"{totals['attempted']:9d} {totals['prov']:5d} {totals['harn']:5d} {totals['ctx']:4d} "
         f"{totals['tok_in']:9d} {totals['tok_out']:9d}"
     )
     return 0

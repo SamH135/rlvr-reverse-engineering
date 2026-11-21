@@ -179,3 +179,8 @@ third-party closed-source software is in the reward loop.
   provided program and with subprocesses blocked (a blackbox episode otherwise
   submitted a subprocess wrapper that scored 0 with no way to know); generated
   instances unchanged; baselines before 0.3.4 used the old prompt.
+- `0.3.5` — RE prompt grading sentence reworded: it now also says the provided program
+  may be run freely while working (weak models read 0.3.4 as a ban and never ran it:
+  base 4B ran it in 0/5 episodes vs 3/5); generated instances unchanged; baselines
+  before 0.3.5 used the 0.3.4 wording. An optional workflow system prompt
+  (`baselines/prompt_c.txt`) is a separate, flagged arm, not part of the task.
