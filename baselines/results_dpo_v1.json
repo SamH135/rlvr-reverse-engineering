@@ -1,0 +1,51 @@
+{
+  "experiment": "dpo_v1_pilot",
+  "date": "2026-11-21",
+  "note": "SFT-vs-DPO comparison on a small local model. All arms: Qwen3-4B-Instruct-2507 Q4_K_M via Ollama, num_ctx 8192, num_predict 2048, workflow system prompt (baselines/prompt_c.txt), task prompt 0.3.5, max_turns 30, eval split (seeds >= 1,000,000). Provider errors (malformed tool-call args, context overflow) are serving/infra failures per docs/DESIGN.md decision 11, not agent failures; reported separately.",
+  "env": {
+    "reward": "binary 0.0/1.0 (solved), fresh-sandbox grading",
+    "oracle": "provided executable is runnable during work, deleted before grading; subprocesses blocked in grading sandbox",
+    "deliverable": "one editable file per family (solution.py / keygen.py / parser.py)",
+    "eval_seed_base": 1000000,
+    "prompt_version": "0.3.5"
+  },
+  "model_lineage": {
+    "base": "unsloth/Qwen3-4B-Instruct-2507, Q4_K_M GGUF",
+    "sft": "LoRA r=32, train_on_responses_only, ~360-405 solved-teacher episodes (deepseek-flash + swe2), 2-3 epochs, lr 1e-4",
+    "dpo": "1 epoch DPOTrainer on top of the SFT LoRA, beta 0.1, lr 5e-5, 129 pairs (69 real + 60 sampled synthetic early-quit), ref = frozen SFT policy",
+    "datasets": {
+      "sft": "sft/train_v2_c.jsonl (405 rows: deepseek + 45 swe2 formats solves)",
+      "dpo_real": "sft/dpo_v1.jsonl (81 pairs at eval time; pilot trained on the 69-pair version + 60 of 121 synthetic)",
+      "dpo_synth": "sft/dpo_synth.jsonl (121 early-quit pairs, synthetic:true)"
+    }
+  },
+  "eval_cells": [
+    {"model": "qwen3-4b-inst-base", "stage": "base", "family": "decompile", "level": 0, "n": 20, "solved": 0, "max_turns": 1, "provider_errors": 0},
+    {"model": "qwen3-4b-inst-base", "stage": "base", "family": "keygen", "level": 0, "n": 5, "solved": 0, "max_turns": 0, "provider_errors": 0},
+    {"model": "qwen3-4b-inst-base", "stage": "base", "family": "formats", "level": 0, "n": 5, "solved": 0, "max_turns": 0, "provider_errors": 1},
+    {"model": "re-tmp-a", "stage": "sft_v2", "family": "decompile", "level": 0, "n": 5, "solved": 1, "max_turns": 3, "provider_errors": 1},
+    {"model": "re-tmp-a", "stage": "sft_v2", "family": "keygen", "level": 0, "n": 5, "solved": 0, "max_turns": 3, "provider_errors": 2},
+    {"model": "re-tmp-b", "stage": "sft_v2", "family": "decompile", "level": 0, "n": 5, "solved": 0, "max_turns": 2, "provider_errors": 3},
+    {"model": "re-tmp-b", "stage": "sft_v2", "family": "keygen", "level": 0, "n": 5, "solved": 0, "max_turns": 4, "provider_errors": 1},
+    {"model": "re-v3c", "stage": "sft_v3", "family": "decompile", "level": 0, "n": 5, "solved": 0, "max_turns": 2, "provider_errors": 2},
+    {"model": "re-v3c", "stage": "sft_v3", "family": "keygen", "level": 0, "n": 2, "solved": 1, "max_turns": 2, "provider_errors": 0, "caveat": "run truncated early; solve had a host artifact-save error (WinError), unverified"},
+    {"model": "re-dpo", "stage": "dpo_v1", "family": "decompile", "level": 0, "n": 20, "solved": 3, "max_turns": 9, "provider_errors": 6, "runs": ["decompile--re-dpo--bash--6fed6e9d", "decompile--re-dpo--bash--58937c79"]},
+    {"model": "re-dpo", "stage": "dpo_v1", "family": "keygen", "level": 0, "n": 20, "solved": 8, "max_turns": 11, "provider_errors": 8, "runs": ["keygen--re-dpo--bash--272042a3", "keygen--re-dpo--bash--a7cb4ef1"]}
+  ],
+  "collection_runs_train_seeds": [
+    {"model": "re-v3c", "family": "decompile", "level": 0, "n": 20, "solved": 1, "max_turns": 6, "provider_errors": 13, "purpose": "on-policy rejection harvesting for dpo_v1"},
+    {"model": "qwen3-4b-inst-base", "family": "decompile", "level": 0, "n": 40, "solved": 0, "max_turns": 1, "provider_errors": 0, "purpose": "base-model rejection harvesting (18 pairs added to dpo_v1)"}
+  ],
+  "findings": [
+    "DPO pilot: decompile L0 3/20, keygen L0 8/20 on held-out seeds vs SFT arms ~1/12 eval combined and base 0/30. Suggestive, not conclusive at this n.",
+    "Failure modes persist post-DPO: max_turns loops (9/20 decompile, 11/20 keygen) and provider errors (malformed tool-call JSON, context overflow at 8192) remain the dominant loss sources.",
+    "DPO reduced early-quit/fake-verification relative to v3c's decompile cell (v3c: 2 max_turns + quit + errors in 5; dpo episodes run to the cap more often and convert more).",
+    "Malformed tool-call args and context overflows are serving issues (Q4_K_M + llama-server tool parsing + 8k ctx), unaffected by preference training as expected."
+  ],
+  "todo": [
+    "verify 2-3 re-dpo solve transcripts show real verification before citing the rate",
+    "larger eval (n>40/cell) or L1 cells for statistical confidence",
+    "ablation: real-only vs real+synthetic DPO to isolate the synthetic share",
+    "DPO v2 on the 81-pair set (adds 18 base-model on-policy rejections)"
+  ]
+}
