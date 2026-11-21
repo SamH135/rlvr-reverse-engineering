@@ -7,5 +7,5 @@ for lvl in ${LEVELS:-0 1}; do for fam in ${FAMS:-decompile keygen formats}; do f
   OLLAMA_KEY=ollama uv run vf-run $fam -n ${N:-5} -r 1 -c 1 -m $m \
     --client.base-url http://localhost:11434/v1 --client.api-key-var OLLAMA_KEY \
     --env.agent.runtime.type docker --env.taskset.level $lvl --env.taskset.split eval \
-    --env.agent.max-turns 30 $SPARG 2>&1 | grep --line-buffered -E "rollout done|episodes ok|Error" | cut -c1-200
+    --env.agent.max-turns 30 $SPARG 2>&1 | grep --line-buffered -E "rollout done|episodes ok|Error" | stdbuf -oL cut -c1-200
 done; done; done
