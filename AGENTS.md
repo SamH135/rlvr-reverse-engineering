@@ -11,7 +11,7 @@ Design rationale: `docs/DESIGN.md`. Threat model and attack results: `HACKS.md`.
 - Tests: `uv run pytest -q -m "not slow"` (fast suite; gcc/objdump/strip tests skip when absent, e.g. Windows). `uv run pytest -q` adds the `slow` marker (multi-seed sweeps). One file: `uv run pytest tests/test_x.py -q`
 - Lint: `uv run ruff check .`
 - Validate one family/level: `uv run vf-validate <family> --runtime.type docker --taskset.level <n> -n 3`
-- Attack suites (Docker, minutes): `qc/run_attacks.py [--level 2]`, `qc/run_keygen_attacks.py`, `qc/run_decompile_attacks.py`, `qc/run_formats_attacks.py` (all `uv run python ...`)
+- Attack suites (Docker, minutes): `qc/run_attacks.py [--level 2]`, `qc/run_keygen_attacks.py`, `qc/run_decompile_attacks.py`, `qc/run_formats_attacks.py` (all `uv run python ...`). CI runs all four on every PR/push (`.github/workflows/ci.yml`, `attacks` job)
 - Transcript viewer: `uv run python tools/view_transcripts.py [outputs|<run-dir>] [-o out.html] [--open]` — renders `traces.jsonl` rollouts to one self-contained HTML
 
 ## Which checks to run (keep it small; do not repeat runs)
