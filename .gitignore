@@ -21,3 +21,6 @@ outputs/
 baselines/logs/
 
 .coverage
+
+# SWE-2 teacher queue
+tmp_swe2/
