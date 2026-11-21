@@ -13,7 +13,7 @@ for fam in keygen decompile formats; do
     LITELLM_KEY=$LITELLM_KEY uv run vf-run $fam -n $N -r 1 -c 1 -m gemini-flash-lite \
       --client.base-url http://localhost:4000/v1 --client.api-key-var LITELLM_KEY \
       --env.agent.runtime.type docker --env.taskset.level $lvl --env.agent.max-turns 30 > "$OUT_DIR/gem_run.log" 2>&1
-    grep -E "rollout done|episodes ok" "$OUT_DIR/gem_run.log" | cut -c1-200
+    grep -E "rollout done|episodes ok" "$OUT_DIR/gem_run.log" | stdbuf -oL cut -c1-200
     if [ "$(grep -c "stop=ProviderError" "$OUT_DIR/gem_run.log")" -ge "$N" ]; then echo "ABORT: all provider errors"; exit 1; fi
     cp "$OUT_DIR/gem_run.log" "$OUT_DIR/gemini_logs_${fam}_L${lvl}.log"
   done

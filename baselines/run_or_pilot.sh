@@ -6,5 +6,5 @@ for m in ${MODELS}; do
   uv run vf-run ${FAM:-decompile} -n ${N:-3} -r 1 -c ${C:-3} -m $m \
     --client.base-url https://openrouter.ai/api/v1 --client.api-key-var OPENROUTER_API_KEY \
     --env.agent.runtime.type docker --env.taskset.level ${LEVEL:-0} --env.taskset.seed-offset ${OFFSET:-100} \
-    --env.agent.max-turns 30 2>&1 | grep -E "rollout done|episodes ok|Error" | cut -c1-200
+    --env.agent.max-turns 30 2>&1 | grep -E "rollout done|episodes ok|Error" | stdbuf -oL cut -c1-200
 done

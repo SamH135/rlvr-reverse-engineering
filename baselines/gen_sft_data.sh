@@ -6,5 +6,5 @@ for lvl in ${LEVELS:-0 1 2 3}; do for fam in ${FAMS:-decompile keygen formats}; 
   uv run vf-run $fam -n ${N:-25} -r 1 -c ${C:-4} -m deepseek-flash \
     --client.base-url https://api.deepseek.com --client.api-key-var DEEPSEEK_API_KEY \
     --env.agent.runtime.type docker --env.taskset.level $lvl --env.taskset.seed-offset ${OFFSET:-10} \
-    --env.agent.max-turns 30 2>&1 | grep -E "episodes ok|Error" | cut -c1-200
+    --env.agent.max-turns 30 2>&1 | grep -E "episodes ok|Error" | stdbuf -oL cut -c1-200
 done; done
