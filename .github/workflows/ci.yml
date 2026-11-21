@@ -25,3 +25,15 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv sync
       - run: uv run pytest -q
+
+  attacks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: docker build -f docker/keygen.Dockerfile -t rlvr-keygen:0.2 .
+      - run: uv run python qc/run_attacks.py
+      - run: uv run python qc/run_keygen_attacks.py
+      - run: uv run python qc/run_decompile_attacks.py
+      - run: uv run python qc/run_formats_attacks.py
