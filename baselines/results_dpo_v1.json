@@ -40,10 +40,11 @@
     "DPO pilot: decompile L0 3/20, keygen L0 8/20 on held-out seeds vs SFT arms ~1/12 eval combined and base 0/30. Suggestive, not conclusive at this n.",
     "Failure modes persist post-DPO: max_turns loops (9/20 decompile, 11/20 keygen) and provider errors (malformed tool-call JSON, context overflow at 8192) remain the dominant loss sources.",
     "DPO reduced early-quit/fake-verification relative to v3c's decompile cell (v3c: 2 max_turns + quit + errors in 5; dpo episodes run to the cap more often and convert more).",
-    "Malformed tool-call args and context overflows are serving issues (Q4_K_M + llama-server tool parsing + 8k ctx), unaffected by preference training as expected."
+    "Malformed tool-call args and context overflows are serving issues (Q4_K_M + llama-server tool parsing + 8k ctx), unaffected by preference training as expected.",
+    "Transcript spot-check (4 solves read end-to-end): rewards are real - write, differential-test vs oracle, fix, re-verify, stop. Residual pathology: post-solve looping to max_turns (8/11 solves); e.g. keygen seed 1000007 solved then ran a broken self-check passing a literal f-string as the serial 34x until the cap. DPO improved conversion, not termination."
   ],
   "todo": [
-    "verify 2-3 re-dpo solve transcripts show real verification before citing the rate",
+    "DONE: transcript verification - solves are genuine; post-solve looping identified as the dominant remaining behavioral failure",
     "larger eval (n>40/cell) or L1 cells for statistical confidence",
     "ablation: real-only vs real+synthetic DPO to isolate the synthetic share",
     "DPO v2 on the 81-pair set (adds 18 base-model on-policy rejections)"
