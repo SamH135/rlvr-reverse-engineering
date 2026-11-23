@@ -23,7 +23,7 @@ from build_sft import convert
 
 EVAL_SEED_BASE = 1_000_000
 INFRA = {"provider_error", "harness_error", "sandbox_error"}
-STUDENT = ("re-v3c", "re-tmp", "re-sft", "qwen3-4b-inst-base", "qwen3-1p7b")
+STUDENT = ("re-v3c", "re-v5", "re-tmp", "re-sft", "qwen3-4b-inst-base", "qwen3-1p7b")
 NOUN = {"decompile": "program", "formats": "reader", "keygen": "checker"}
 OLD_SENT = (
     "Grading runs in a fresh sandbox where the provided {n} is not present and "
