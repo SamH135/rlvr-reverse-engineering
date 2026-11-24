@@ -54,6 +54,7 @@ def main():
     ap.add_argument("--per-task", type=int, default=1)
     ap.add_argument("--max-chars", type=int, default=16000)
     ap.add_argument("--glob", default="outputs/*--deepseek-flash--*/traces.jsonl")
+    ap.add_argument("--clean-stop", action="store_true", help="keep only solves that ended agent_completed (drops solve-then-loop)")
     a = ap.parse_args()
     seen, kept, stats = collections.Counter(), [], collections.Counter()
     for p in sorted(glob.glob(a.glob)):
@@ -68,6 +69,9 @@ def main():
             if acc != "default" or lvl is None or lvl > a.max_level or seed is None or seed >= EVAL_SEED_BASE:
                 continue
             if t["rewards"].get("solved", {}).get("score") != 1.0 or t.get("errors"):
+                continue
+            if a.clean_stop and t.get("stop_condition") != "agent_completed":
+                stats["not_clean_stop"] += 1
                 continue
             key = (fam, lvl, seed)
             if seen[key] >= a.per_task:
