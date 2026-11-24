@@ -15,6 +15,7 @@ Updated: 2026-11-23. Numbers live in `baselines/results_dpo_v1.json`; this file 
 - `re-dpo-v2` — DPO v2 on v3c LoRA (92 real + same 60 synth). keygen L0 3/18 (vs v1 8/20) — regression, closed
 - `re-v5` — fresh SFT LoRA on `sft/train_v5.jsonl` (537 rows). keygen L0 9/20, decompile L0 5/20; 7/14 solves stopped cleanly
 - `re-dpo-v5` — DPO on v5 LoRA, `sft/dpo_v5.jsonl` (39 on-policy re-v5 rejections + 12 synth), warmup 1, lr 2e-5. **keygen L0 11/20** (6/11 clean stops), **decompile L0 4/20 + 5/20** (two runs, 8/9 clean stops). Best raw score; loops not reduced
+- `re-dpo-v5b` — DPO on v5 LoRA, `sft/dpo_v5_runb.jsonl` (run-A 51 + 18 solve-then-loop pairs), trained on Runpod A40 (Colab T4 OOM'd). **keygen L0 8/20, decompile L0 2/20** — flat-to-regression vs run A; stoploop pairs did NOT fix looping (4/8 keygen solves still looped, 12 decompile loop fails)
 
 ## Data state
 - `sft/train_v3.jsonl` — 406 chosen rows (deepseek + swe2 formats + 1 mistral)
@@ -41,9 +42,10 @@ Updated: 2026-11-23. Numbers live in `baselines/results_dpo_v1.json`; this file 
 - Total cash outlay beyond the Devin sub: <$20 + **$5.73 Runpod** lifetime (v5 collection pod ~$1.3 + A40 eval pod ~$4.1 incl. ~$2.1 idle burn when the container-side dead-man switch failed — terminate via `delete-pod`, not in-pod poweroff).
 
 ## Next
-1. ~~DPO-on-re-v5~~ — DONE. Result above: raw score up (11+4/5 vs 9+5), clean-stop rate up (~70% vs 50%), **loop rate unchanged** — single-epoch on-policy DPO moves conversion/termination-on-success, not the loop pathology itself.
-2. Decide run B: `sft/dpo_v5_stoploop.jsonl` (18 solve-then-loop pairs) is built and ready. Now the most-targeted lever left — dpo-v5 keygen still had 5/11 solves loop to cap. Same recipe (warmup 1, lr 2e-5) on top of the dpo-v5 adapter, or retrain from re-v5 adapter with both files (69 pairs) — latter is cleaner attribution.
-3. Open: GRPO / on-policy RL is the next lever after DPO-on-v5 (DafnyBench-style verifiable-reward gains of +9–25pts at 4B scale per literature). The persisting loop pathology is an argument for on-policy RL with a length/stop bonus, which DPO pairs can't express.
+1. ~~DPO-on-re-v5 (run A)~~ — DONE: 11+4/5, clean stops ~70%, loops unchanged.
+2. ~~Run B (stoploop pairs)~~ — DONE, **negative result**: adding 18 `solved_then_loop` pairs did not reduce looping and decompile dropped to 2/20. Confirms the flagged risk (rejected prefix containing a good solve is a confusing target) or that offline DPO simply can't express "stop after verifying". Do NOT retry this pair type without redesign (e.g. rejected = post-solve turns only, prefix-shared).
+3. **DPO looks tapped out** — two iterations on-policy moved conversion + clean-stop but never the loop pathology. Next lever is on-policy RL (GRPO-style) with reward shaping for stopping, per the same literature (+9–25pts at 4B). Needs trainer-side env access — a real integration project, not a data change.
+4. Model to keep/deploy: `re-dpo-v5` (run A) remains the best artifact. v5b's adapter+GGUF retained in Downloads/pod-volume for the record but should not become the headline.
 
 ## Gotchas
 - Eval seeds ≥1,000,000 never go in training data (builders enforce).

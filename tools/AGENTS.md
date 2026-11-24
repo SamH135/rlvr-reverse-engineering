@@ -3,7 +3,8 @@
 Transcript viewer: `view_transcripts.py`. Data builders: `build_sft.py`
 (`--glob` selects the trace dirs; default is deepseek teacher runs),
 `build_dpo.py`, `find_recovery.py`, `rewrite_sft_prompts.py`, `synth_dpo.py`,
-`synth_recovery.py`, `watch_runs.py`.
+`synth_recovery.py`, `watch_runs.py`. `dpo_train.py` is the notebook's DPO recipe as a
+script for rented GPUs (Colab T4 OOMs on run B): `python dpo_train.py <adapter> <pairs.jsonl> <out>`.
 
 ## swe2_*: Devin/SWE-2 as an in-env teacher policy
 
