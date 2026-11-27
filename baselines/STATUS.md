@@ -52,3 +52,18 @@ Updated: 2026-11-23. Numbers live in `baselines/results_dpo_v1.json`; this file 
 - Provider errors (malformed tool-call JSON, ctx overflow) are serving issues — count separately; DPO doesn't fix them.
 - Rejection-harvest runs can use lower max-turns than eval runs — a 20-turn loop is still a loop.
 - `baselines/logs/` and `outputs/` are gitignored; results files are the durable record.
+
+## L1 transfer + base baselines (2026-11-26, A40 pod ~$2.4, same protocol: eval seeds, cap 30, prompt_c, num_predict 2048)
+**This overturns the headline.** Full keygen matrix (n=20 each):
+
+| model | keygen L0 | keygen L1 | decompile L0 |
+|---|---|---|---|
+| qwen3-4b-inst-base | **10/20** | 0/20 | **0/20** |
+| re-v5 (SFT) | 9/20 | 0/20 (4 PE) | 5/20 |
+| re-dpo-v5 (DPO) | 11/20 | 2/20 (7 PE) | 4-5/20 |
+
+- Base keygen L0 10/20: 10 fast clean solves (5-11 turns), transcript-verified legitimate (reads check.py, reimplements, verifies, stops). The earlier "base ~0" belief was never backed by a full n=20 run. **At keygen L0 the training added nothing measurable** — all three models statistically identical. Keygen L0 is below the base model's zero-shot ceiling.
+- The only place training shows a lift is **decompile L0: base 0/20 vs trained 4-5/20** — marginal at n=20 (5/20 Wilson [11-47%], base upper ~16%) but the right direction, and decompile is the genuinely harder skill (binary analysis, no source).
+- L1 transfer is ~zero for everyone; 2 solves from re-dpo-v5 vs 0 from re-v5 is noise at n=20.
+- Provider-error asymmetry: base had 0-1 PEs across 60 episodes; trained models 4-7 PEs per 20 — LoRA-training appears to make the runaway-generation/truncation failure worse, not better.
+- Implication for GRPO: keygen L0 is a poor RL target (base already ~50%); decompile L0 or keygen L1+ are the informative families. Any future training claim must include same-protocol base rows.
