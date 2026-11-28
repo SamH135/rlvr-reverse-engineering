@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import verifiers.v1 as vf
+from determinism import gold_repeats
 from verifiers.v1.cli.validate import _run_check
 from verifiers.v1.configs.cli.validate import ValidateConfig
 from verifiers.v1.utils.artifacts import collect
@@ -119,6 +120,12 @@ async def apply_operation(
         await runtime.write(
             f"{REPO_ROOT}/keygen.py",
             _fixed_keygen(data.example_name, data.example_serial).encode(),
+        )
+    elif operation == "random_output":
+        await runtime.write(
+            f"{REPO_ROOT}/keygen.py",
+            b"import random\ndef keygen(name):\n"
+            b"    return '%04X-%04X' % (random.getrandbits(16), random.getrandbits(16))\n",
         )
     elif operation == "constant_serial":
         await runtime.write(
@@ -235,14 +242,15 @@ async def main() -> int:
         json.loads(path.read_text(encoding="utf-8"))
         for path in sorted(ATTACK_DIR.glob("*.json"))
     ]
-    if len(attacks) != 14:
-        raise ValueError(f"expected 14 keygen attack descriptors, found {len(attacks)}")
+    if len(attacks) != 15:
+        raise ValueError(f"expected 15 keygen attack descriptors, found {len(attacks)}")
     config = ValidateConfig(runtime=vf.DockerConfig(allow=[], memory=4.0))
     rows = []
     for level in (0, 3):
         for attack in attacks:
             for seed in attack["seeds"]:
                 rows.append(await run_case(attack, seed, level, config))
+    rows += await gold_repeats(rows, attacks, run_case, config)
 
     headers = (
         "attacker",

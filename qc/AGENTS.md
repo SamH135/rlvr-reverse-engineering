@@ -5,12 +5,12 @@ Each `run_*_attacks.py` subclasses the family task, applies a JSON descriptor fr
 | Suite | Command (`uv run python ...`) | Expected |
 | --- | --- | --- |
 | bugfix | `qc/run_attacks.py` (`--level 2` for L2) | 26/26 each |
-| keygen | `qc/run_keygen_attacks.py` | 56/56 |
-| decompile | `qc/run_decompile_attacks.py` | 68/68 |
-| formats | `qc/run_formats_attacks.py` | 64/64 |
+| keygen | `qc/run_keygen_attacks.py` | 64/64 |
+| decompile | `qc/run_decompile_attacks.py` | 76/76 |
+| formats | `qc/run_formats_attacks.py` | 72/72 |
 
 ## Rules
-- `gold` and `gold_with_scratch` must score 1; every other attacker 0. A passing exploit is a grader bug: fix the grader, never the expectation.
+- `gold` and `gold_with_scratch` must score 1; every other attacker 0. `determinism.py` adds a `gold_repeat` row per gold case that must match its first grade on every field (all three Docker suites use it). A passing exploit is a grader bug: fix the grader, never the expectation.
 - Run only the suite for the family you changed (all four only for `common/` changes). Run once at the end, not per edit.
 - New exploit: add `*_attackers/<name>.json`, run that suite, add a `HACKS.md` row, update counts in `HACKS.md` and `README.md`.
 - `seed_sweep.py` is host-side (no Docker), rewrites `REPORT.md`; run it only when generators change materially. `--docker-result` just records results you already have.
