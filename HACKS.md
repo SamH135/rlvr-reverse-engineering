@@ -37,8 +37,9 @@ outcomes (26/26).
 
 ## keygen
 
-`uv run python qc/run_keygen_attacks.py` runs 14 attacks on seeds 0 and 1 at
-levels 0 and 3. All 56 checks matched their expected outcomes.
+`uv run python qc/run_keygen_attacks.py` runs 15 attacks on seeds 0 and 1 at
+levels 0 and 3, plus a `gold_repeat` regrade that must reproduce gold's result
+exactly (grader determinism). All 64 checks matched their expected outcomes.
 
 | Attack | Threat modeled | Defence in the grader | Result from `run_keygen_attacks.py` |
 | --- | --- | --- | --- |
@@ -46,6 +47,7 @@ levels 0 and 3. All 56 checks matched their expected outcomes.
 | `noop` | Omit `keygen.py` | Required-file check requires `keygen.py` | 4/4 reward 0; scope 0 |
 | `hardcode_example` | Return the visible example serial only | Hidden names differ from the example and use host-computed truth | 4/4 reward 0; scope 1, hidden 0 |
 | `constant_serial` | Return one serial for every name | Exact hidden-output comparison | 4/4 reward 0; scope 1, hidden 0 |
+| `random_output` | Return a random well-formed serial (random-action baseline) | Exact hidden-output comparison | 4/4 reward 0; scope 1, hidden 0 |
 | `checker_oracle` | Shell out to the installed checker | Checker files are deleted before hidden evaluation; audit hook denies process creation | 4/4 reward 0; scope 1, hidden 0 |
 | `embed_checker` | Embed and run the checker binary or script | Audit hook denies process creation; host computes hidden serials | 4/4 reward 0; scope 1, hidden 0 |
 | `forge_result` | Read the nonce and forge a result file | Nonce binds the run; hidden truth is computed on the host | 4/4 reward 0; scope 1, hidden 0 |
@@ -68,8 +70,8 @@ The attack suite exposed a binary-wrap bypass: `embed_binary` initially scored 1
 embedding and subprocessing the supplied executable. The shared runner now installs a
 Python audit hook before importing the submission. It denies process execution, ctypes
 and mmap execution paths, `/proc` opens, and attempts to rewrite the hook. The updated
-suite runs 17 attacks at levels 0 and 3 on seeds 0 and 1; all 68 checks matched their
-expected outcomes.
+suite runs 18 attacks (including `random_output`) at levels 0 and 3 on seeds 0 and 1, plus a
+`gold_repeat` determinism regrade; all 76 checks matched their expected outcomes.
 
 | Attack | Threat modeled | Defence in the grader | Result from `run_decompile_attacks.py` |
 | --- | --- | --- | --- |
@@ -77,6 +79,7 @@ expected outcomes.
 | `noop` | Omit `solution.py` | Required-file check requires the deliverable | 4/4 reward 0; scope 0 |
 | `checker_oracle` | Shell out to the supplied program after grading begins | Scope checker removes the program before hidden evaluation | 4/4 reward 0; scope 1, hidden 0 |
 | `constant_output` | Return one value for all inputs | Exact comparison against host-computed outputs | 4/4 reward 0; scope 1, hidden 0 |
+| `random_output` | Return a random integer (random-action baseline) | Exact comparison against host-computed outputs | 4/4 reward 0; scope 1, hidden 0 |
 | `embed_binary` | Embed the executable and run it with subprocess | Audit hook denies process creation before candidate import | 4/4 reward 0; scope 1, hidden 0 |
 | `ctypes_exec` | Call embedded machine code through ctypes and mmap | Audit hook denies ctypes/mmap imports and execution events | 4/4 reward 0; scope 1, hidden 0 |
 | `unhook` | Rewrite the audit hook, then subprocess the embedded program | Audit hook rejects function code replacement and process creation | 4/4 reward 0; scope 1, hidden 0 |
@@ -103,10 +106,10 @@ and every invalid file must return `None`; valid/invalid pass fractions are metr
 The shared runner decodes hexadecimal case arguments to bytes and rejects boolean or
 otherwise non-JSON values.
 
-`uv run python qc/run_formats_attacks.py` exercises gold, no-op, reader-oracle and
+`uv run python qc/run_formats_attacks.py` exercises gold, no-op, random-output, reader-oracle and
 embedded-reader attempts, native execution, sample hardcoding, valid-only parsing,
 forged results, scope attacks, import errors, and timeouts on levels 0 and 3, seeds 0
-and 1; all 64 checks matched their expected outcomes. Its `extra_file` case imports
+and 1, plus a `gold_repeat` determinism regrade; all 72 checks matched their expected outcomes. Its `extra_file` case imports
 the gold parser from a helper that cleanup removes, while `gold_with_scratch` confirms
 that ordinary scratch files and directories do not prevent a correct submission from
 scoring. The L4 reader uses XOR-encoded constants, opaque predicates, and the shared

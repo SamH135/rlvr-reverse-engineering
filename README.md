@@ -67,9 +67,9 @@ suite is targeted evidence, not a proof of security.
 | Family | QC coverage | Attacks exercised and defenses |
 | --- | --- | --- |
 | **bugfix** | 26 expected checks per run at L1 and L2 | Forged results and visible-test edits are checked against protected files and host-computed hidden truth. Exact file/symlink checks, timeouts, and malformed/import failure handling cover scope and execution attacks. |
-| **keygen** | 56 checks across L0/L3 and two seeds | Checker-oracle and embedded-checker attacks meet cleanup before grading and the shared audit hook. Required-file checks, protected hashes, host-side truth, nonce-bound results, type checks, and timeout handling cover other attacks. |
-| **decompile** | 68 checks across L0/L3 and two seeds | Includes binary wrapping, ctypes/mmap execution, and hook-rewrite attacks. The shared audit hook denies native execution paths; host truth, required-file checks, and timeouts address the other attacks. |
-| **formats** | 64 checks across L0/L3 and two seeds | Includes reader-oracle, embedded-reader, native-execution, sample-hardcoding, and valid-only attacks. Hidden valid and invalid files, strict JSON return validation, host truth, required-file checks, and binary reward defeat these shortcuts. |
+| **keygen** | 64 checks across L0/L3 and two seeds | Checker-oracle and embedded-checker attacks meet cleanup before grading and the shared audit hook. Required-file checks, protected hashes, host-side truth, nonce-bound results, type checks, and timeout handling cover other attacks. |
+| **decompile** | 76 checks across L0/L3 and two seeds | Includes binary wrapping, ctypes/mmap execution, and hook-rewrite attacks. The shared audit hook denies native execution paths; host truth, required-file checks, and timeouts address the other attacks. |
+| **formats** | 72 checks across L0/L3 and two seeds | Includes reader-oracle, embedded-reader, native-execution, sample-hardcoding, and valid-only attacks. Hidden valid and invalid files, strict JSON return validation, host truth, required-file checks, and binary reward defeat these shortcuts. |
 
 The shared runner rejects subprocess/process creation, ctypes and mmap execution paths,
 `/proc` opens, and attempts to rewrite the audit hook. It treats exceptions and invalid

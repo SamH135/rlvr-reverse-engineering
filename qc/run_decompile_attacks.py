@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import verifiers.v1 as vf
+from determinism import gold_repeats
 from verifiers.v1.cli.validate import _run_check
 from verifiers.v1.configs.cli.validate import ValidateConfig
 from verifiers.v1.utils.artifacts import collect
@@ -131,6 +132,11 @@ async def apply_operation(
             await runtime.write(f"{REPO_ROOT}/notes/scratch.txt", b"temporary notes\n")
     elif operation == "noop":
         return
+    elif operation == "random_output":
+        await runtime.write(
+            f"{REPO_ROOT}/solution.py",
+            b"import random\ndef f(xs):\n    return random.randint(-(10**9), 10**9)\n",
+        )
     elif operation == "constant_output":
         await runtime.write(f"{REPO_ROOT}/solution.py", b"def f(xs):\n    return 0\n")
     elif operation == "embed_binary":
@@ -251,9 +257,9 @@ async def main() -> int:
         json.loads(path.read_text(encoding="utf-8"))
         for path in sorted(ATTACK_DIR.glob("*.json"))
     ]
-    if len(attacks) != 17:
+    if len(attacks) != 18:
         raise ValueError(
-            f"expected 17 decompile attack descriptors, found {len(attacks)}"
+            f"expected 18 decompile attack descriptors, found {len(attacks)}"
         )
     config = ValidateConfig(runtime=vf.DockerConfig(allow=[], memory=4.0))
     rows = []
@@ -261,6 +267,7 @@ async def main() -> int:
         for attack in attacks:
             for seed in attack["seeds"]:
                 rows.append(await run_case(attack, seed, level, config))
+    rows += await gold_repeats(rows, attacks, run_case, config)
 
     headers = (
         "attacker",

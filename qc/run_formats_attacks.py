@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import verifiers.v1 as vf
+from determinism import gold_repeats
 from verifiers.v1.cli.validate import _run_check
 from verifiers.v1.configs.cli.validate import ValidateConfig
 from verifiers.v1.utils.artifacts import collect
@@ -136,6 +137,11 @@ async def apply_operation(
             f"{REPO_ROOT}/parser.py",
             _hardcode_samples_source(data).encode("utf-8"),
         )
+    elif operation == "random_output":
+        await runtime.write(
+            f"{REPO_ROOT}/parser.py",
+            b"import random\ndef parse(data):\n    return random.getrandbits(32)\n",
+        )
     elif operation == "always_none":
         await runtime.write(
             f"{REPO_ROOT}/parser.py", b"def parse(data):\n    return None\n"
@@ -249,9 +255,9 @@ async def main() -> int:
         json.loads(path.read_text(encoding="utf-8"))
         for path in sorted(ATTACK_DIR.glob("*.json"))
     ]
-    if len(attacks) != 16:
+    if len(attacks) != 17:
         raise ValueError(
-            f"expected 16 formats attack descriptors, found {len(attacks)}"
+            f"expected 17 formats attack descriptors, found {len(attacks)}"
         )
     config = ValidateConfig(runtime=vf.DockerConfig(allow=[], memory=4.0))
     rows = []
@@ -259,6 +265,7 @@ async def main() -> int:
         for attack in attacks:
             for seed in attack["seeds"]:
                 rows.append(await run_case(attack, seed, level, config))
+    rows += await gold_repeats(rows, attacks, run_case, config)
 
     headers = (
         "attacker",
